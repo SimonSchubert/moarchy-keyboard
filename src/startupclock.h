@@ -27,5 +27,9 @@ inline qint64 elapsed() { return timer().isValid() ? timer().elapsed() : -1; }
 
 Q_DECLARE_LOGGING_CATEGORY(lcStartup)
 
+// "startup:" is in the MESSAGE, not just the category. Under journald -- which
+// is how Qt logs on Arch -- the category is a structured field and never
+// appears in the message text, so grepping the journal for "moarchy.startup"
+// finds nothing while the lines are sitting right there.
 #define MOARCHY_MARK(what) \
-    qCInfo(lcStartup) << (what) << "at" << StartupClock::elapsed() << "ms"
+    qCInfo(lcStartup) << "startup:" << (what) << "at" << StartupClock::elapsed() << "ms"

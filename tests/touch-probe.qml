@@ -15,7 +15,12 @@ Window {
     id: win
     visible: true
     visibility: Window.FullScreen
-    title: "moa touch probe"
+    // The count goes in the TITLE, because sway reports it in get_tree and the
+    // test can therefore read a number. The first version wrote the count to a
+    // file with XMLHttpRequest PUT to a file:// URL, which produced no file and
+    // no error -- so both directions of the test read 0 and it reported an
+    // invisible wall that did not exist.
+    title: "moa touch probe " + taps
     color: taps > 0 ? "#a6e3a1" : "#1e1e2e"
 
     property int taps: 0
@@ -41,14 +46,6 @@ Window {
     MultiPointTouchArea {
         anchors.fill: parent
         mouseEnabled: true
-        onPressed: {
-            win.taps++
-            // XMLHttpRequest with a file: URL is the only way a bare `qml`
-            // runtime can write a file without a C++ helper. Ugly, and it means
-            // the test reads a number rather than squinting at a screenshot.
-            var request = new XMLHttpRequest()
-            request.open("PUT", "file:///tmp/moa-touch-count")
-            request.send(String(win.taps))
-        }
+        onPressed: win.taps++
     }
 }

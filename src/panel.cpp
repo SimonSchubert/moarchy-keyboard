@@ -134,6 +134,19 @@ void Panel::applyVisibility()
     m_view->setMask(m_shown ? QRegion(0, 0, m_view->width(), m_view->height())
                             : noInputRegion());
 
-    if (QQuickItem *root = m_view->rootObject())
+    QQuickItem *root = m_view->rootObject();
+    if (root)
         root->setVisible(m_shown);
+
+    // Logged because "the panel says it is shown and the screen says it is
+    // black" needs the intermediate facts to be separable: whether the root
+    // item exists, whether it is visible, and whether it has a size. A root
+    // with zero width paints nothing while every flag above it reads correct.
+    qCInfo(lcPanel) << "visibility ->" << (m_shown ? "shown" : "hidden")
+                    << "root" << (root ? "yes" : "MISSING")
+                    << "rootVisible" << (root && root->isVisible())
+                    << "rootSize" << (root ? root->width() : -1)
+                                  << "x" << (root ? root->height() : -1)
+                    << "viewSize" << m_view->width() << "x" << m_view->height()
+                    << "exposed" << m_view->isExposed();
 }

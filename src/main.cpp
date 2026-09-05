@@ -126,7 +126,7 @@ int main(int argc, char *argv[])
         // the motivating case: it parses, it draws, and tapping it does
         // nothing at all -- there is no error, because "no such layout" is
         // indistinguishable from "the user has not tapped it yet".
-        LayoutStore store;
+        LayoutStore store(nullptr);
         QTextStream out(stdout);
         const QStringList names = store.names();
         int problems = 0;
@@ -260,7 +260,7 @@ int main(int argc, char *argv[])
             if (!QFile::exists(path))
                 continue;
 
-            Theme theme;
+            Theme theme(nullptr);
             theme.loadOnce(path);
             ++checked;
 
@@ -317,7 +317,7 @@ int main(int argc, char *argv[])
     }
 
     if (parser.isSet(dumpKeymapOption)) {
-        LayoutStore store;
+        LayoutStore store(nullptr);
         VirtualKeyboard probe;
         QString compileError;
         const QStringList characters = store.allCharacters();
@@ -347,7 +347,7 @@ int main(int argc, char *argv[])
     // from the characters they declare -- that is what lets a long-press
     // accent, a euro sign or an em dash be typed into a terminal, which has no
     // text input to commit a string to.
-    LayoutStore layouts;
+    LayoutStore layouts(nullptr);
 
     MOARCHY_MARK("layouts loaded");
 
@@ -375,7 +375,7 @@ int main(int argc, char *argv[])
     // --- Services -----------------------------------------------------------
     KeyRouter router(&inputMethod, &virtualKeyboard);
 
-    Theme theme;
+    Theme theme(nullptr);
     theme.start(parser.value(colorsOption));
     MOARCHY_MARK("theme parsed");
 

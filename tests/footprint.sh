@@ -26,6 +26,13 @@
 set -uo pipefail
 . /tmp/moa-env.sh
 
+# Wake the panel before anything else. swayidle blanks the output after ten
+# minutes, and grim then BLOCKS FOREVER waiting for a frame that will never
+# arrive -- it does not fail, it hangs, and so does the ssh session driving it.
+# Three stuck grim processes and two dead sessions before this was noticed.
+swaymsg "output * power on" >/dev/null 2>&1
+sleep 1
+
 BINARY=${BINARY:-/tmp/moarchy-keyboard}
 
 qt_clients() {

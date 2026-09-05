@@ -10,6 +10,13 @@
 set -uo pipefail
 . /tmp/moa-env.sh
 
+# Wake the panel before anything else. swayidle blanks the output after ten
+# minutes, and grim then BLOCKS FOREVER waiting for a frame that will never
+# arrive -- it does not fail, it hangs, and so does the ssh session driving it.
+# Three stuck grim processes and two dead sessions before this was noticed.
+swaymsg "output * power on" >/dev/null 2>&1
+sleep 1
+
 BINARY=${BINARY:-/tmp/moarchy-keyboard}
 pass=0; fail=0; manual=0
 ok()   { echo "  PASS  $*"; pass=$((pass+1)); }
@@ -86,6 +93,24 @@ section() {
 # toplevel reports itself activated over wlr-foreign-toplevel. That breaks the
 # next test as surely as it breaks anyone else's, and this suite spends its time
 # driving exactly the focus transitions that produce it.
+# The touch probe puts its tap count in its window title; sway reports titles.
+probe_taps() {
+  swaymsg -t get_tree 2>/dev/null | python3 -c '
+import json, sys
+def walk(n):
+    name = n.get("name") or ""
+    if name.startswith("moa touch probe"):
+        parts = name.split()
+        print(parts[-1] if parts[-1].isdigit() else 0)
+    for k in n.get("nodes", []) + n.get("floating_nodes", []): walk(k)
+walk(json.load(sys.stdin))' | head -1
+}
+
+# Distinguish "the probe is not there" from "the probe saw nothing".
+probe_present() {
+  swaymsg -t get_tree 2>/dev/null | grep -q "moa touch probe"
+}
+
 restore_focus() {
   local id
   id=$(swaymsg -t get_tree | python3 -c '
@@ -156,7 +181,7 @@ restart || true
 sleep 3
 
 echo "  startup timeline:"
-log "$S" | grep "moarchy.startup" | sed 's/.*moarchy.startup: /    /'
+log "$S" | grep "startup:" | sed 's/.*startup: /    /'
 
 MS=$(log "$S" | grep "FIRST FRAME" | grep -oE "at [0-9]+ ms" | grep -oE "[0-9]+" | tail -1)
 if [[ -z $MS ]]; then
@@ -294,9 +319,12 @@ sleep 4
 if ! swaymsg -t get_tree | grep -q "moa-cycle"; then
   no "AC 2: could not open a text window to cycle focus against"
 else
+  # 0.4 s per step gave 4 activates out of 20 cycles on this A53: the
+  # compositor had not finished delivering the previous focus change before the
+  # next one arrived, so most cycles produced no activate at all.
   for _ in $(seq 1 20); do
-    swaymsg "[app_id=moa-cycle] focus" >/dev/null 2>&1; sleep 0.4
-    swaymsg "workspace 19" >/dev/null 2>&1; sleep 0.4
+    swaymsg "[app_id=moa-cycle] focus" >/dev/null 2>&1; sleep 1
+    swaymsg "workspace 19" >/dev/null 2>&1; sleep 1
   done
 fi
 A=$(grep -c "zwp_input_method_v2#[0-9]*\.activate" /tmp/moa-wl20.log)
@@ -322,9 +350,7 @@ if ours; then
   # Tested both ways, because only one direction proves only half of it: down
   # must pass through, up must NOT. A keyboard that always passes touches
   # through cannot be typed on.
-  rm -f /tmp/moa-touch-count
-  swaymsg exec "qml6 /tmp/touch-probe.qml" >/dev/null 2>&1 || \
-    swaymsg exec "qml /tmp/touch-probe.qml" >/dev/null 2>&1
+  swaymsg exec "qml6 /tmp/touch-probe.qml" >/dev/null 2>&1
   sleep 6
   swaymsg "[app_id=moa-touch] focus" >/dev/null 2>&1
   sleep 1
@@ -334,17 +360,23 @@ if ours; then
   sleep 2
   sudo python3 /tmp/tap.py --scale 2 --warmup 180,200 180,600 >/dev/null 2>&1
   sleep 1
-  down=$(cat /tmp/moa-touch-count 2>/dev/null || echo 0)
+  down=$(probe_taps)
 
   busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b true >/dev/null 2>&1
   sleep 2
   sudo python3 /tmp/tap.py --scale 2 180,600 >/dev/null 2>&1
   sleep 1
-  up=$(cat /tmp/moa-touch-count 2>/dev/null || echo 0)
+  up=$(probe_taps)
 
-  echo "  taps reaching the app: $down with the keyboard down, then $up after one more with it up"
+  if ! probe_present; then
+    no "AC 4b: the touch probe never opened -- inconclusive, not a product result"
+    down=""; up=""
+  fi
+  echo "  taps reaching the app: ${down:-?} with the keyboard down, then ${up:-?} after one more with it up"
   # The warmup tap lands in the app area too, so `down` counts it as well.
-  if [[ $down -ge 1 && $up -eq $down ]]; then
+  if [[ -z ${down:-} ]]; then
+    : # already reported inconclusive
+  elif [[ $down -ge 1 && $up -eq $down ]]; then
     ok "AC 4b (passes through when down, blocked when up)"
   elif [[ $down -lt 1 ]]; then
     no "AC 4b: the retracted keyboard swallowed the touch -- invisible wall"

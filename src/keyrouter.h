@@ -47,6 +47,10 @@ public:
         return s_instance;
     }
 
+    // Not default-constructible, which is the only reason this singleton
+    // worked while Theme and LayoutStore silently did not: a QML_SINGLETON that
+    // CAN be default-constructed is, and create() is never called. See the note
+    // in theme.h.
     KeyRouter(InputMethod *inputMethod, VirtualKeyboard *virtualKeyboard,
               QObject *parent = nullptr);
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <type_traits>
+
 #include <QQmlEngine>
 #include <QtGlobal>
 
@@ -62,7 +64,20 @@ public:
         return s_instance;
     }
 
-    explicit Theme(QObject *parent = nullptr);
+    // NO default argument on the constructor, deliberately.
+    //
+    // With `QObject *parent = nullptr` this class is default-constructible, and
+    // the QML engine then builds its OWN instance rather than calling create().
+    // It does that silently: no warning, no error, and create() -- along with
+    // any check inside it -- is simply never called. The result here was a
+    // keyboard that drew every surface at #000000, because QML held a freshly
+    // constructed Theme whose QColor members were all default-invalid while
+    // main held the configured one. Black on black, no diagnostics, and it
+    // took a pixel sample and an address comparison to see it.
+    //
+    // Removing the default argument makes the type non-default-constructible,
+    // which leaves create() as the only way the engine can obtain it.
+    explicit Theme(QObject *parent);
 
     // Watches the live palette and reloads on change. Safe to call when the
     // path does not exist: the built-in palette is used until it appears.
@@ -153,3 +168,15 @@ private:
 
     inline static Theme *s_instance = nullptr;
 };
+
+// The invariant that keeps QML and main() looking at the same object.
+//
+// A QML_SINGLETON that can be default-constructed is default-constructed BY THE
+// ENGINE, silently, and create() is never called -- so QML gets a blank
+// instance while main configures a different one. That shipped once and drew
+// every surface black. Restoring a default argument to the constructor brings
+// it straight back, so it is a build error instead.
+static_assert(!std::is_default_constructible_v<Theme>,
+              "Theme must not be default-constructible: the QML engine would build "
+              "its own instance instead of calling create(), and QML would then "
+              "hold a different object from the one main() configured.");
