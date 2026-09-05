@@ -125,13 +125,3 @@ void InputMethod::commitString(const QString &text)
     zwp_input_method_v2_commit(m_inputMethod, m_doneCount);
     m_connection->flush();
 }
-
-void InputMethod::deleteSurroundingText(uint32_t beforeBytes, uint32_t afterBytes)
-{
-    if (!m_inputMethod || !m_current.active)
-        return;
-
-    zwp_input_method_v2_delete_surrounding_text(m_inputMethod, beforeBytes, afterBytes);
-    zwp_input_method_v2_commit(m_inputMethod, m_doneCount);
-    m_connection->flush();
-}

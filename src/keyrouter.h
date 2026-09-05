@@ -29,8 +29,6 @@ class KeyRouter : public QObject
     Q_PROPERTY(bool active READ isActive NOTIFY activeChanged)
     Q_PROPERTY(bool sensitive READ isSensitive NOTIFY stateChanged)
     Q_PROPERTY(QString suggestedLayout READ suggestedLayout NOTIFY stateChanged)
-    Q_PROPERTY(int latchedModifiers READ latchedModifiers WRITE setLatchedModifiers
-                   NOTIFY latchedModifiersChanged)
 
 public:
     // See the note above the class.
@@ -60,9 +58,6 @@ public:
     // manual layout choice outranks it until focus changes (AC 21).
     QString suggestedLayout() const;
 
-    int latchedModifiers() const { return int(m_latched); }
-    void setLatchedModifiers(int modifiers);
-
     // A printable character (or a short string -- an emoji is several code
     // units). Takes the text path when one is available.
     Q_INVOKABLE void sendText(const QString &text);
@@ -84,12 +79,16 @@ public:
 Q_SIGNALS:
     void activeChanged();
     void stateChanged();
-    void latchedModifiersChanged();
 
 private:
+    // Deliberately holds NO modifier state of its own. The keyboard's shift /
+    // ctrl / alt latching lives in Keyboard.qml, which passes the modifiers it
+    // wants with each key. A second copy here was dead -- nothing set it -- and
+    // worse than dead: the setter pushed them onto the SEAT as held modifiers,
+    // where they would have applied to a plugged-in USB keyboard too, and
+    // stayed applied until something cleared them.
     InputMethod *m_inputMethod = nullptr;
     VirtualKeyboard *m_virtualKeyboard = nullptr;
-    VirtualKeyboard::Modifiers m_latched = VirtualKeyboard::NoModifiers;
 
     inline static KeyRouter *s_instance = nullptr;
 };

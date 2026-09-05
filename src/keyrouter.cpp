@@ -2,7 +2,6 @@
 
 #include "inputmethod.h"
 
-#include <QHash>
 #include <QLoggingCategory>
 
 Q_LOGGING_CATEGORY(lcRouter, "moarchy.router")
@@ -42,19 +41,6 @@ QString KeyRouter::suggestedLayout() const
     }
 }
 
-void KeyRouter::setLatchedModifiers(int modifiers)
-{
-    const auto value = VirtualKeyboard::Modifiers(modifiers);
-    if (value == m_latched)
-        return;
-    m_latched = value;
-
-    // Shift is applied per-key on the text path and does not belong in the
-    // seat's held state, or every subsequent keycode would be shifted too.
-    m_virtualKeyboard->setHeldModifiers(value & ~VirtualKeyboard::Modifiers(VirtualKeyboard::Shift));
-    Q_EMIT latchedModifiersChanged();
-}
-
 void KeyRouter::sendText(const QString &text)
 {
     if (text.isEmpty())
@@ -78,10 +64,9 @@ void KeyRouter::sendText(const QString &text)
         return;
     }
 
-    auto modifiers = m_latched;
-    if (needsShift)
-        modifiers |= VirtualKeyboard::Shift;
-    m_virtualKeyboard->tap(keycode, modifiers);
+    m_virtualKeyboard->tap(keycode,
+                           needsShift ? VirtualKeyboard::Modifiers(VirtualKeyboard::Shift)
+                                      : VirtualKeyboard::Modifiers(VirtualKeyboard::NoModifiers));
 }
 
 void KeyRouter::sendKey(const QString &name, int modifiers)

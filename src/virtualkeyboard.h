@@ -63,8 +63,11 @@ public:
     // Evdev keycode for a named key ("Escape", "BackSpace", "Left", ...), or 0.
     static uint32_t keycodeForName(const QString &name);
 
+    // Press and release one key with `modifiers` held around it, and only
+    // around it. There is deliberately no persistent held-modifier state: this
+    // keyboard's latching lives in the QML, and pushing modifiers onto the seat
+    // would apply them to a physical keyboard as well.
     void tap(uint32_t linuxKeycode, Modifiers modifiers);
-    void setHeldModifiers(Modifiers modifiers);
 
     // How many characters needed a generated slot. Logged at startup; also the
     // thing to look at when a character mysteriously will not type.
@@ -96,7 +99,6 @@ private:
     // character -> evdev keycode, for the generated tail only.
     QHash<QChar, uint32_t> m_generated;
 
-    Modifiers m_held = NoModifiers;
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(VirtualKeyboard::Modifiers)

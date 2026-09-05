@@ -24,8 +24,6 @@
 class Panel : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(bool shown READ isShown NOTIFY shownChanged)
-    Q_PROPERTY(int panelHeight READ panelHeight NOTIFY panelHeightChanged)
 
 public:
     explicit Panel(QObject *parent = nullptr);
@@ -47,10 +45,6 @@ public:
 
 public Q_SLOTS:
     void setShown(bool shown);
-
-Q_SIGNALS:
-    void shownChanged();
-    void panelHeightChanged();
 
 private:
     void applyVisibility();

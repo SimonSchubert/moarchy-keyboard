@@ -290,13 +290,6 @@ void VirtualKeyboard::sendModifiers(Modifiers modifiers)
     zwp_virtual_keyboard_v1_modifiers(m_keyboard, xkbMask(modifiers), 0, 0, 0);
 }
 
-void VirtualKeyboard::setHeldModifiers(Modifiers modifiers)
-{
-    m_held = modifiers;
-    sendModifiers(m_held);
-    m_connection->flush();
-}
-
 void VirtualKeyboard::tap(uint32_t linuxKeycode, Modifiers modifiers)
 {
     if (!m_keyboard) {
@@ -304,17 +297,17 @@ void VirtualKeyboard::tap(uint32_t linuxKeycode, Modifiers modifiers)
         return;
     }
 
-    const Modifiers effective = m_held | modifiers;
-
-    sendModifiers(effective);
+    sendModifiers(modifiers);
     zwp_virtual_keyboard_v1_key(m_keyboard, timestamp(), linuxKeycode,
                                 WL_KEYBOARD_KEY_STATE_PRESSED);
     zwp_virtual_keyboard_v1_key(m_keyboard, timestamp(), linuxKeycode,
                                 WL_KEYBOARD_KEY_STATE_RELEASED);
 
-    // Drop anything held only for this key, but keep what the user latched.
-    if (effective != m_held)
-        sendModifiers(m_held);
+    // Always clear afterwards. A modifier left set on the seat outlives the key
+    // it was for and would silently modify whatever is typed next -- including
+    // on a physical keyboard.
+    if (modifiers != NoModifiers)
+        sendModifiers(NoModifiers);
 
     m_connection->flush();
 }

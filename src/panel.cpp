@@ -107,7 +107,6 @@ void Panel::setShown(bool shown)
         return;
     m_shown = shown;
     applyVisibility();
-    Q_EMIT shownChanged();
 }
 
 void Panel::applyVisibility()

@@ -77,7 +77,12 @@ public:
     bool isSensitive() const;
 
     void commitString(const QString &text);
-    void deleteSurroundingText(uint32_t beforeBytes, uint32_t afterBytes);
+
+    // No deleteSurroundingText wrapper. It is the protocol's way to do
+    // backspace on the text path, and this keyboard deliberately does not use
+    // it -- see the note on handleSurroundingText in the .cpp. Backspace is a
+    // keycode in both paths, which is correct in every case and needs no
+    // bookkeeping.
 
 Q_SIGNALS:
     void activeChanged();
