@@ -273,6 +273,60 @@ The touch run did complete before it died, so AC 30, 31, 32 and 38 above are
 real results and not casualties. AC 33 is the one that was lost, for an
 unrelated reason — see below.
 
+## What changed after it landed on the phone
+
+Everything above was measured before the keyboard became the default. Using it
+found four things that testing had not, and three of them were mine.
+
+**It was on the wrong layer.** Overlay, chosen so a fullscreen app could not
+hide it. That put it in the same layer as mobileomarchy's gesture strip, where
+placement is decided by map order rather than by anything stable, and this
+keyboard won: it took the screen edge and stranded the home pill at 497..520,
+between the app and the keys. Exclusive zones resolve layer by layer from
+Overlay down, so from **Top** the strip is resolved first and keeps the edge for
+free — which is how squeekboard behaved and why nobody had to think about it.
+Back on Top.
+
+No geometry fixes an ordering problem, and two attempts confirmed it: a bottom
+margin moves the surface without moving the reservation, so the strip still
+lands above and the margin becomes a band of wallpaper under the keys.
+
+The cost is real and is now a known limitation rather than a discovery waiting
+to happen: **on Top, a fullscreen window renders above the keyboard**, so a text
+field in a fullscreen app gets a keyboard that is mapped, reserves space,
+reports `Visible` on D-Bus and cannot be seen. Equally true of squeekboard. The
+proper fix is to switch to Overlay only while a fullscreen window is focused,
+which `set_layer` has allowed without remapping since layer-shell v2.
+
+**A dismissed keyboard latched down for ever.** The manual hide was cleared on
+`activeChanged`, which almost never fires: it reports a *net* change of the
+active flag, and moving focus between two text fields coalesces deactivate and
+activate into one `done`, so the flag goes true → true and nothing is signalled.
+The input method now also emits `activated()` on every activate and
+`stateApplied()` on every `done`, and the override clears on any of them after a
+short grace period.
+
+**And the platform gives nothing when an already-focused field is tapped.**
+Measured with `WAYLAND_DEBUG`: zero input-method traffic, because nothing about
+the client's text state changed. A terminal is the worst case, since it holds
+text input the whole time it is focused. There is no event to wake on, so the
+keyboard grew a **restore handle** — a small pill, shown in exactly one state
+(dismissed by hand with a text input still active) and nothing at all otherwise.
+That gave the surface a third mode: Handle reserves no space and takes touch
+only in the handle's own rectangle, which QML reports back so the rest of the
+surface cannot become an invisible wall over the app.
+
+**Geometry.** Keys were 36 wide by 75 tall — more than twice as tall as wide.
+The panel is now 200 logical pixels rather than 300, giving 32×50 on a four-row
+layout, and runs edge to edge: an earlier version inset both sides by 20px to
+leave the back-edge gesture its band, which spent 40px of a 360px screen so that
+a gesture could operate on top of a keyboard.
+
+**A key could stay lit for ever.** A key lights on touch-down and unlights on
+release, so a release that never arrived — the compositor taking the grab, the
+surface hiding mid-press — left it lit permanently, and nothing else ever wrote
+`false` to it. Cleared on cancel and whenever the keyboard reappears.
+
 ## Notes for whoever runs these next
 
 - The seat has **capabilities 6** — keyboard and touch, **no pointer**. So
@@ -285,4 +339,14 @@ unrelated reason — see below.
   the output is in `journalctl`, and a redirect to a file captures nothing.
 - Never `pkill -f` a pattern matching a binary name that also appears in the ssh
   command line — it matches the command line carrying it and kills the remote
-  shell. Use `pkill -x moarchy-keyboar` (comm truncates to 15 characters).
+  shell. Use `pkill -x moarchy-keyboar` (comm truncates to 15 characters). This
+  was written down and then walked into twice more, so put the command in a
+  script on the device instead of passing it over ssh.
+- **`/tmp` does not survive a reboot**, and this phone reboots. Several
+  "the handle does not work" results turned out to be `tap.py` missing, not the
+  product. The test scripts now carry `tests/env.sh` beside them for the same
+  reason: without `WAYLAND_DISPLAY` a Qt app falls back to xcb and aborts with
+  SIGABRT, which reads as the program being broken.
+- Before concluding a device is dead, run `uptime`. `ping` failing and ssh
+  saying `Host is down` are not evidence; a `Connection refused` a minute
+  earlier was the device answering, and it was ignored.
