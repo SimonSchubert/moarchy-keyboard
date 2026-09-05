@@ -71,13 +71,18 @@ Item {
         // states must not look the same.
         border.width: root.latched && !root.locked ? 2 : 0
         border.color: Colors.accent
-        // No animation on press: a colour transition, however short, is one more
-        // thing between the finger and the feedback, and AC 33 gives the whole
-        // budget to the first frame. Release fades, press does not.
-        Behavior on color {
-            enabled: !root.pressed
-            ColorAnimation { duration: 90 }
-        }
+        // No Behavior on colour, in either direction.
+        //
+        // The tempting version is `Behavior on color { enabled: !root.pressed }`
+        // so releases fade and presses do not. That relies on `enabled` being
+        // re-evaluated before the colour binding on the same change, and QML
+        // guarantees no order between two bindings on one event -- so a press
+        // would animate some of the time and not others. AC 33 gives the entire
+        // budget to the first frame, and an intermittent 90 ms fade is exactly
+        // the kind of "feels laggy sometimes" that never gets diagnosed.
+        //
+        // A key that lights instantly and unlights instantly is also what a real
+        // keyboard does.
 
         Text {
             anchors.centerIn: parent
