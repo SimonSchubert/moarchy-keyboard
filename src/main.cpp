@@ -137,6 +137,14 @@ int main(int argc, char *argv[])
         QStringLiteral("fgRole,bgRole[,alpha]"));
     parser.addOption(roleOption);
 
+    QCommandLineOption backEdgeOption(
+        QStringList { QStringLiteral("back-edge-inset") },
+        QStringLiteral("Logical pixels along the left edge to leave to "
+                       "mobileomarchy's back gesture: excluded from the input "
+                       "region and inset from the keys. Default 20."),
+        QStringLiteral("px"));
+    parser.addOption(backEdgeOption);
+
     QCommandLineOption checkLayoutsOption(
         QStringList { QStringLiteral("check-layouts") },
         QStringLiteral("Validate every layout and exit non-zero on a problem. "
@@ -443,6 +451,15 @@ int main(int argc, char *argv[])
     });
 
     // --- QML ----------------------------------------------------------------
+    if (parser.isSet(backEdgeOption)) {
+        bool ok = false;
+        const int px = parser.value(backEdgeOption).toInt(&ok);
+        if (!ok || px < 0)
+            return fail(QStringLiteral("bad --back-edge-inset"),
+                        parser.value(backEdgeOption));
+        panel.setBackEdgeInset(px);
+    }
+
     if (!panel.prepare(&error))
         return fail(QStringLiteral("cannot build the panel"), error);
     MOARCHY_MARK("panel prepared");

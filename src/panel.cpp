@@ -19,6 +19,37 @@ namespace {
 // Android and iOS both sit on a phone this shape.
 constexpr int kPanelHeight = 300;
 
+// The left band mobileomarchy's back-edge gesture owns: Overlay layer, left,
+// full height, Style.space(16), and ExclusionMode.Ignore -- so it reserves no
+// space and overlaps whatever else is there.
+//
+// Two surfaces in the same layer wanting the same pixels is decided by map
+// order, which is a race. Excluding the band from this keyboard's input region
+// settles it: a masked-out area falls through to the next surface in the layer,
+// which is exactly how mobileomarchy.shade coexists with the same gesture (see
+// openRegion in Shade.qml).
+//
+// It matters more than a stray gesture would: the back edge is how the keyboard
+// is dismissed. Swallow it and there is no gesture to put the keyboard away.
+//
+// The gesture STRIP along the bottom needs no such treatment -- it is
+// ExclusionMode.Auto, so it reserves its 20px and this bottom-anchored surface
+// is placed above it rather than over it. Confirmed on the device: the panel
+// sits at y 405..705 of a 720px screen, not 420..720.
+//
+// The width is NOT 16 logical pixels, which is the trap. mobileomarchy declares
+// it as Style.space(16), and Style.space rounds a *scaled* value -- the scale
+// comes from the theme's shell.toml, so the real width tracks the font size and
+// is about 18 at the default scale of ~1.15 (its 20px gesture strip reserves
+// 23). Masking 16 leaves a two-pixel band where a key is drawn, looks tappable,
+// and is silently swallowed by the gesture instead: the same failure this mask
+// exists to prevent, just narrower and therefore harder to diagnose.
+//
+// So the default is deliberately generous rather than exact, and settable with
+// --back-edge-inset for a theme that scales further. A couple of pixels of key
+// width is a cheap price for never having a dead stripe.
+constexpr int kDefaultBackEdgeInset = 20;
+
 // The input region for a retracted keyboard: one pixel, in the corner.
 //
 // Two wrong answers here, and the failure mode of both is the same and is
@@ -54,6 +85,9 @@ Panel::Panel(QObject *parent)
 
 bool Panel::prepare(QString *error)
 {
+    if (m_backEdgeInset < 0)
+        m_backEdgeInset = kDefaultBackEdgeInset;
+
     m_view = new QQuickView;
     m_view->setResizeMode(QQuickView::SizeRootObjectToView);
     m_view->setColor(Qt::transparent);
@@ -143,7 +177,11 @@ void Panel::applyVisibility()
     if (layerShell)
         layerShell->setExclusiveZone(m_shown ? m_panelHeight : 0);
 
-    m_view->setMask(m_shown ? QRegion(0, 0, m_view->width(), m_view->height())
+    // Everything except the back-edge band. Not the whole surface: see
+    // kBackEdgeInset.
+    m_view->setMask(m_shown ? QRegion(m_backEdgeInset, 0,
+                                      m_view->width() - m_backEdgeInset,
+                                      m_view->height())
                             : noInputRegion());
 
     QQuickItem *root = m_view->rootObject();

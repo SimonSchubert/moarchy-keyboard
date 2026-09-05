@@ -39,6 +39,12 @@ public:
     bool load(const QUrl &source, QString *error);
 
     bool isShown() const { return m_shown; }
+
+    // Width of the left band reserved for mobileomarchy's back-edge gesture,
+    // excluded from this keyboard's input region and inset from its keys.
+    // See the note in panel.cpp for why it is not simply 16.
+    int backEdgeInset() const { return m_backEdgeInset; }
+    void setBackEdgeInset(int px) { m_backEdgeInset = px; }
     int panelHeight() const { return m_panelHeight; }
 
     QQuickView *view() const { return m_view; }
@@ -51,5 +57,6 @@ private:
 
     QQuickView *m_view = nullptr;
     bool m_shown = false;
+    int m_backEdgeInset = -1;   // -1 until prepare() applies the default
     int m_panelHeight = 0;
 };
