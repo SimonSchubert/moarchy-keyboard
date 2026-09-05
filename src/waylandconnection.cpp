@@ -1,5 +1,7 @@
 #include "waylandconnection.h"
 
+#include "startupclock.h"
+
 #include <QAbstractEventDispatcher>
 #include <QCoreApplication>
 #include <QSocketNotifier>
@@ -78,6 +80,7 @@ bool WaylandConnection::open(QString *error)
     // any events the binds themselves produce.
     wl_display_roundtrip(m_display);
     wl_display_roundtrip(m_display);
+    MOARCHY_MARK("wayland globals bound");
 
     if (!m_seat) {
         *error = QStringLiteral("compositor advertises no wl_seat");

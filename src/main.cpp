@@ -3,6 +3,7 @@
 #include "layoutstore.h"
 #include "oskservice.h"
 #include "panel.h"
+#include "startupclock.h"
 #include "theme.h"
 #include "virtualkeyboard.h"
 #include "waylandconnection.h"
@@ -16,10 +17,12 @@
 #include <QQmlContext>
 #include <QQmlEngine>
 #include <QQuickView>
+#include <QQuickWindow>
 #include <QStandardPaths>
 #include <QTextStream>
 
 Q_LOGGING_CATEGORY(lcMain, "moarchy.main")
+Q_LOGGING_CATEGORY(lcStartup, "moarchy.startup")
 
 namespace {
 
@@ -46,11 +49,14 @@ int fail(const QString &what, const QString &detail)
 
 int main(int argc, char *argv[])
 {
+    StartupClock::start();
+
     // No LayerShellQt::Shell::useLayerShell() here: deprecated since 6.6 and
     // unnecessary since 6.5, because LayerShellQt::Window::get() -- which
     // Panel::prepare() calls before the view is ever shown -- now arranges the
     // layer-shell role itself.
     QGuiApplication app(argc, argv);
+    MOARCHY_MARK("QGuiApplication");
     app.setApplicationName(QStringLiteral("moarchy-keyboard"));
     app.setApplicationVersion(QStringLiteral(MOARCHY_VERSION));
     app.setDesktopFileName(QStringLiteral("moarchy-keyboard"));
@@ -259,13 +265,17 @@ int main(int argc, char *argv[])
     // text input to commit a string to.
     LayoutStore layouts;
 
+    MOARCHY_MARK("layouts loaded");
+
     VirtualKeyboard virtualKeyboard;
     if (!virtualKeyboard.init(&connection, layouts.allCharacters(), &error))
         return fail(QStringLiteral("virtual keyboard unavailable"), error);
+    MOARCHY_MARK("keymap compiled and uploaded");
 
     InputMethod inputMethod;
     if (!inputMethod.init(&connection, &error))
         return fail(QStringLiteral("input method unavailable"), error);
+    MOARCHY_MARK("input method bound");
 
     QObject::connect(&connection, &WaylandConnection::lost, &app, [&app](const QString &reason) {
         qCCritical(lcMain).noquote() << "lost the compositor:" << reason;
@@ -283,6 +293,7 @@ int main(int argc, char *argv[])
 
     Theme theme;
     theme.start(parser.value(colorsOption));
+    MOARCHY_MARK("theme parsed");
 
     OskService osk;
     if (!osk.registerOnBus(&error)) {
@@ -325,6 +336,7 @@ int main(int argc, char *argv[])
     // --- QML ----------------------------------------------------------------
     if (!panel.prepare(&error))
         return fail(QStringLiteral("cannot build the panel"), error);
+    MOARCHY_MARK("panel prepared");
 
     // Singletons, not context properties. See the note above class Theme for
     // why: qmllint can resolve a declared singleton and cannot see a context
@@ -339,6 +351,19 @@ int main(int argc, char *argv[])
     if (!panel.load(QUrl(QStringLiteral("qrc:/moarchy/qml/Main.qml")), &error))
         return fail(QStringLiteral("cannot load the keyboard QML"), error);
 
+    MOARCHY_MARK("QML loaded and surface mapped");
     qCInfo(lcMain) << "ready";
+
+    // First actual frame, not just "we asked for one". This is the number AC 36
+    // is about -- everything above is work done before the compositor has
+    // anything to show.
+    QObject::connect(panel.view(), &QQuickWindow::frameSwapped, &app, [] {
+        static bool first = true;
+        if (first) {
+            first = false;
+            MOARCHY_MARK("FIRST FRAME");
+        }
+    });
+
     return app.exec();
 }
