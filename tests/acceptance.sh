@@ -207,6 +207,7 @@ cleanup() {
   swaymsg "[app_id=moa-htop] kill"    >/dev/null 2>&1
   swaymsg "[app_id=moa-focus] kill"   >/dev/null 2>&1
   swaymsg "[app_id=moa-cycle] kill"   >/dev/null 2>&1
+  swaymsg "[app_id=moa-multi] kill"   >/dev/null 2>&1
   swaymsg '[title="^moa probe"] kill' >/dev/null 2>&1
   swaymsg "[app_id=moa-pwtest] kill"  >/dev/null 2>&1
   swaymsg "[title=\"moa password test\"] kill" >/dev/null 2>&1
@@ -444,6 +445,87 @@ if ours; then
     no "AC 4b: the raised keyboard let a touch through to the app underneath"
   fi
   probe_clear
+fi
+
+# The keyboard logs one "latency: press to ... on the wire" line per emission,
+# with the character in it. That makes the touch criteria assertable from the
+# log instead of by reading a terminal out of a screenshot.
+emissions() { log "$1" | grep -c "on the wire" || true; }
+emitted()   { log "$1" | grep "on the wire" | grep -oE "\(.*\)$" | tr -d '()' | tr '\n' ' '; }
+
+# Letters layout geometry, measured on the device rather than assumed: the
+# gesture strip at the bottom holds an exclusive zone, so the panel sits at
+# y 405..705 rather than 420..720. Four rows of ~74: centres 440, 515, 590, 664.
+# Column centres are unit/2 + n*unit with unit = 36.
+section "AC 30 -- two fingers at once" || true
+if ours; then
+  restart --layout letters || true
+  swaymsg exec "foot -a moa-multi cat -A" >/dev/null 2>&1
+  wait_for_window "moa-multi"
+  swaymsg "[app_id=moa-multi] focus" >/dev/null 2>&1
+  sleep 2
+  S=$(since)
+  # q and w, the second landing while the first is still held. A single-touch
+  # model drops the second, which is what dropped letters feel like at speed.
+  sudo -n python3 /tmp/tap.py --scale 2 --warmup 180,150 --two-finger 18,440 54,440 >/dev/null 2>&1
+  sleep 2
+  n=$(emissions "$S")
+  echo "  emitted: $(emitted "$S")"
+  [[ $n -ge 2 ]] && ok "AC 30 (both fingers registered, $n emissions)" \
+                 || no "AC 30 (only $n emission(s) from two fingers)"
+fi
+
+section "AC 31 -- sliding off a key cancels it" || true
+if ours; then
+  S=$(since)
+  # Press q, drag to w, release there. Nothing may be emitted: not q, because
+  # the finger left it, and not w, because the press did not begin there.
+  sudo -n python3 /tmp/tap.py --scale 2 --slide 18,440 54,440 >/dev/null 2>&1
+  sleep 2
+  n=$(emissions "$S")
+  [[ $n -eq 0 ]] && ok "AC 31 (nothing emitted)" \
+                 || no "AC 31 (slide emitted $n: $(emitted "$S"))"
+fi
+
+section "AC 32 -- long press selects an alternate" || true
+if ours; then
+  S=$(since)
+  # Hold `a` past the 400 ms threshold and release without moving. Its first
+  # alternate is @, so @ is what must arrive -- not a.
+  sudo -n python3 /tmp/tap.py --scale 2 --hold 0.9 18,515 >/dev/null 2>&1
+  sleep 2
+  got=$(emitted "$S")
+  echo "  emitted: $got"
+  case "$got" in
+    *@*) ok "AC 32 (long press gave the alternate)" ;;
+    *a*) no "AC 32 (gave the base character, so the popup never opened)" ;;
+    *)   no "AC 32 (nothing emitted: '$got')" ;;
+  esac
+fi
+
+section "AC 33 + AC 38 -- feedback and commit latency" || true
+if ours; then
+  S=$(since)
+  sudo -n python3 /tmp/tap.py --scale 2 18,440 54,440 90,440 >/dev/null 2>&1
+  sleep 2
+  echo "  measured:"
+  log "$S" | grep "latency:" | sed 's/.*latency: /    /' | head -8
+
+  frame=$(log "$S" | grep "press to first frame" | grep -oE "[0-9]+ ms" | grep -oE "[0-9]+" | sort -n | tail -1)
+  wire=$(log "$S" | grep "on the wire" | grep -oE "to [a-z_ ]+ [0-9]+ ms" | grep -oE "[0-9]+" | sort -n | tail -1)
+  if [[ -n $frame ]]; then
+    [[ $frame -le 17 ]] && ok "AC 33 (worst press-to-frame ${frame} ms)" \
+                        || no "AC 33 (worst press-to-frame ${frame} ms > 17)"
+  else
+    no "AC 33: no frame timing recorded"
+  fi
+  if [[ -n $wire ]]; then
+    [[ $wire -le 50 ]] && ok "AC 38 (worst press-to-wire ${wire} ms)" \
+                       || no "AC 38 (worst press-to-wire ${wire} ms > 50)"
+  else
+    no "AC 38: no wire timing recorded"
+  fi
+  swaymsg "[app_id=moa-multi] kill" >/dev/null 2>&1
 fi
 
 section "AC 19 -- a user layout overrides the shipped one" || true

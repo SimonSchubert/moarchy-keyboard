@@ -3,6 +3,7 @@
 #include <QQmlEngine>
 #include <QtGlobal>
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QString>
 
@@ -62,6 +63,21 @@ public:
     // manual layout choice outranks it until focus changes (AC 21).
     QString suggestedLayout() const;
 
+    // Called the instant a touch lands on a key, before any decision about
+    // what that key does. Everything measured afterwards is measured from
+    // here, so the two latency criteria are answered against the same origin:
+    //
+    //   AC 33 -- press to the frame that shows the key lit, <= one frame
+    //   AC 38 -- press to commit_string reaching the compositor, <= 50 ms
+    //
+    // These are different numbers and get conflated easily. Feedback happens
+    // on press and emission happens on release, so a slow commit does not make
+    // the keyboard feel slow, and a fast commit does not make it feel fast.
+    Q_INVOKABLE void markPress();
+
+    // Connected to QQuickWindow::frameSwapped, to close the AC 33 loop.
+    void noteFrame();
+
     // A printable character (or a short string -- an emoji is several code
     // units). Takes the text path when one is available.
     Q_INVOKABLE void sendText(const QString &text);
@@ -91,6 +107,11 @@ private:
     // worse than dead: the setter pushed them onto the SEAT as held modifiers,
     // where they would have applied to a plugged-in USB keyboard too, and
     // stayed applied until something cleared them.
+    void reportLatency(const char *what, const QString &detail);
+
+    QElapsedTimer m_sincePress;
+    bool m_frameReported = true;
+
     InputMethod *m_inputMethod = nullptr;
     VirtualKeyboard *m_virtualKeyboard = nullptr;
 

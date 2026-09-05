@@ -16,6 +16,33 @@ KeyRouter::KeyRouter(InputMethod *inputMethod, VirtualKeyboard *virtualKeyboard,
     connect(m_inputMethod, &InputMethod::stateChanged, this, &KeyRouter::stateChanged);
 }
 
+void KeyRouter::markPress()
+{
+    m_sincePress.start();
+    m_frameReported = false;
+}
+
+void KeyRouter::noteFrame()
+{
+    // Only the FIRST frame after a press is the feedback frame; every later one
+    // is unrelated and would make the number look better than it is.
+    if (m_frameReported || !m_sincePress.isValid())
+        return;
+    m_frameReported = true;
+    qCInfo(lcRouter) << "latency: press to first frame"
+                     << m_sincePress.elapsed() << "ms";
+}
+
+void KeyRouter::reportLatency(const char *what, const QString &detail)
+{
+    if (!m_sincePress.isValid())
+        return;
+    qCInfo(lcRouter).noquote() << QStringLiteral("latency: press to %1 %2 ms  (%3)")
+                                     .arg(QLatin1String(what))
+                                     .arg(m_sincePress.elapsed())
+                                     .arg(detail);
+}
+
 bool KeyRouter::isActive() const
 {
     return m_inputMethod->isActive();
@@ -48,6 +75,7 @@ void KeyRouter::sendText(const QString &text)
 
     if (m_inputMethod->isActive()) {
         m_inputMethod->commitString(text);
+        reportLatency("commit_string on the wire", text);
         return;
     }
 
@@ -67,6 +95,7 @@ void KeyRouter::sendText(const QString &text)
     m_virtualKeyboard->tap(keycode,
                            needsShift ? VirtualKeyboard::Modifiers(VirtualKeyboard::Shift)
                                       : VirtualKeyboard::Modifiers(VirtualKeyboard::NoModifiers));
+    reportLatency("keycode on the wire", text);
 }
 
 void KeyRouter::sendKey(const QString &name, int modifiers)
@@ -77,6 +106,7 @@ void KeyRouter::sendKey(const QString &name, int modifiers)
         return;
     }
     m_virtualKeyboard->tap(keycode, VirtualKeyboard::Modifiers(modifiers));
+    reportLatency("keycode on the wire", name);
 }
 
 void KeyRouter::sendChord(const QString &character, int modifiers)

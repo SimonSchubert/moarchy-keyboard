@@ -102,20 +102,67 @@ class VirtualTouchscreen:
     def _sync(self):
         self._emit(EV_SYN, SYN_REPORT, 0)
 
-    def tap(self, x, y, hold=0.09):
-        self._emit(EV_ABS, ABS_MT_SLOT, 0)
-        self._emit(EV_ABS, ABS_MT_TRACKING_ID, 1)
+    # --- primitives ------------------------------------------------------
+    #
+    # Split out from tap() so multi-finger and sliding gestures can compose
+    # them. Protocol B: each finger owns a slot, and a tracking id of -1 lifts
+    # it. BTN_TOUCH goes down on the first finger and up on the last.
+
+    def down(self, slot, x, y, tracking_id=None):
+        self._emit(EV_ABS, ABS_MT_SLOT, slot)
+        self._emit(EV_ABS, ABS_MT_TRACKING_ID,
+                   slot + 1 if tracking_id is None else tracking_id)
         self._emit(EV_ABS, ABS_MT_POSITION_X, int(x))
         self._emit(EV_ABS, ABS_MT_POSITION_Y, int(y))
-        self._emit(EV_KEY, BTN_TOUCH, 1)
+        if slot == 0:
+            self._emit(EV_KEY, BTN_TOUCH, 1)
         self._sync()
 
-        time.sleep(hold)
+    def move(self, slot, x, y):
+        self._emit(EV_ABS, ABS_MT_SLOT, slot)
+        self._emit(EV_ABS, ABS_MT_POSITION_X, int(x))
+        self._emit(EV_ABS, ABS_MT_POSITION_Y, int(y))
+        self._sync()
 
-        self._emit(EV_ABS, ABS_MT_SLOT, 0)
+    def up(self, slot, last=True):
+        self._emit(EV_ABS, ABS_MT_SLOT, slot)
         self._emit(EV_ABS, ABS_MT_TRACKING_ID, -1)
-        self._emit(EV_KEY, BTN_TOUCH, 0)
+        if last:
+            self._emit(EV_KEY, BTN_TOUCH, 0)
         self._sync()
+
+    # --- gestures --------------------------------------------------------
+
+    def tap(self, x, y, hold=0.09):
+        self.down(0, x, y)
+        time.sleep(hold)
+        self.up(0)
+
+    def two_finger_tap(self, first, second, stagger=0.05, hold=0.12):
+        """Both fingers down, second landing while the first is still held.
+
+        This is the case AC 30 is about: typing at speed puts a second finger
+        down before the first lifts, and a single-touch model drops it."""
+        self.down(0, *first)
+        time.sleep(stagger)
+        self.down(1, *second)
+        time.sleep(hold)
+        self.up(1, last=False)
+        time.sleep(stagger)
+        self.up(0)
+
+    def slide(self, start, end, steps=8, hold=0.05):
+        """Press at start, drag to end, release there -- AC 31 and AC 32."""
+        self.down(0, *start)
+        time.sleep(hold)
+        for i in range(1, steps + 1):
+            t = i / steps
+            self.move(0,
+                      start[0] + (end[0] - start[0]) * t,
+                      start[1] + (end[1] - start[1]) * t)
+            time.sleep(0.03)
+        time.sleep(hold)
+        self.up(0)
 
     def close(self):
         try:
@@ -127,7 +174,13 @@ class VirtualTouchscreen:
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("points", nargs="+", metavar="X,Y")
+    parser.add_argument("points", nargs="*", metavar="X,Y")
+    parser.add_argument("--two-finger", nargs=2, metavar=("X,Y", "X,Y"),
+                        help="two fingers, the second landing while the first "
+                             "is still down (AC 30)")
+    parser.add_argument("--slide", nargs=2, metavar=("X,Y", "X,Y"),
+                        help="press at the first point, drag to the second, "
+                             "release there (AC 31 slide-off, AC 32 alternates)")
     parser.add_argument("--scale", type=float, default=1.0,
                         help="multiply each coordinate (use 2 to pass logical pixels)")
     parser.add_argument("--width", type=int, default=720)
@@ -145,6 +198,10 @@ def main():
     if os.geteuid() != 0:
         sys.exit("tap.py needs root for /dev/uinput")
 
+    def point(text):
+        x, y = (float(v) * args.scale for v in text.split(","))
+        return x, y
+
     device = VirtualTouchscreen(args.width, args.height)
     try:
         if args.warmup:
@@ -153,8 +210,18 @@ def main():
             print(f"warmup {wx:.0f},{wy:.0f}", flush=True)
             time.sleep(args.gap)
 
-        for point in args.points:
-            x, y = (float(v) * args.scale for v in point.split(","))
+        if args.two_finger:
+            a, b = (point(p) for p in args.two_finger)
+            device.two_finger_tap(a, b, hold=args.hold)
+            print(f"two-finger {a[0]:.0f},{a[1]:.0f} + {b[0]:.0f},{b[1]:.0f}", flush=True)
+
+        if args.slide:
+            a, b = (point(p) for p in args.slide)
+            device.slide(a, b, hold=args.hold)
+            print(f"slid {a[0]:.0f},{a[1]:.0f} -> {b[0]:.0f},{b[1]:.0f}", flush=True)
+
+        for spec in args.points:
+            x, y = point(spec)
             device.tap(x, y, hold=args.hold)
             print(f"tapped {x:.0f},{y:.0f}", flush=True)
             time.sleep(args.gap)

@@ -466,12 +466,15 @@ int main(int argc, char *argv[])
     // First actual frame, not just "we asked for one". This is the number AC 36
     // is about -- everything above is work done before the compositor has
     // anything to show.
-    QObject::connect(panel.view(), &QQuickWindow::frameSwapped, &app, [] {
+    QObject::connect(panel.view(), &QQuickWindow::frameSwapped, &app, [&router] {
         static bool first = true;
         if (first) {
             first = false;
             MOARCHY_MARK("FIRST FRAME");
         }
+        // Closes the AC 33 loop: the first frame after a key press is the one
+        // that shows it lit.
+        router.noteFrame();
     });
 
     return app.exec();

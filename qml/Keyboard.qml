@@ -291,6 +291,10 @@ Item {
                 if (!cap)
                     continue
 
+                // Before anything else, so the latency numbers start at the
+                // touch rather than at whatever this handler decides to do.
+                Router.markPress()
+
                 cap.pressed = true
                 keyboard.tracked[point.pointId] = { cap: cap, cancelled: false, longPress: false }
 
