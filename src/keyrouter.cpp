@@ -22,6 +22,11 @@ void KeyRouter::markPress()
     m_frameReported = false;
 }
 
+void KeyRouter::markRelease()
+{
+    m_sinceRelease.start();
+}
+
 void KeyRouter::noteFrame()
 {
     // Only the FIRST frame after a press is the feedback frame; every later one
@@ -35,11 +40,11 @@ void KeyRouter::noteFrame()
 
 void KeyRouter::reportLatency(const char *what, const QString &detail)
 {
-    if (!m_sincePress.isValid())
+    if (!m_sinceRelease.isValid())
         return;
-    qCInfo(lcRouter).noquote() << QStringLiteral("latency: press to %1 %2 ms  (%3)")
+    qCInfo(lcRouter).noquote() << QStringLiteral("latency: release to %1 %2 ms  (%3)")
                                      .arg(QLatin1String(what))
-                                     .arg(m_sincePress.elapsed())
+                                     .arg(m_sinceRelease.elapsed())
                                      .arg(detail);
 }
 

@@ -10,10 +10,10 @@ it; everything unproven says so.
 
 | | count |
 |---|---|
-| Passed | 30 |
+| Passed | 31 |
 | Failed | 2 |
 | Partial | 3 |
-| Not yet verified | 10 |
+| Not yet verified | 9 |
 
 45 criteria: SPEC.md's 44 plus AC 4b, added when testing showed that "the
 surface stays mapped when retracted" and "the retracted keyboard does not
@@ -49,6 +49,7 @@ paint — and both are corrected against measurements below rather than defended
 | 37 | Idle CPU | 1 jiffy / 15 s shown (~0.07 % of one core), 7 / 15 s hidden |
 | 39 | **GPU, not llvmpipe** | 3 fds on `/dev/dri/renderD128`, same as the shell. `libLLVM` is mapped, but that is libgallium's unconditional link, not a software fallback — the fd is the real test |
 | 40 | Builds as a pacman package | `makepkg` (no `--nodeps`) → `moarchy-keyboard-0.1.0-1-aarch64.pkg.tar.xz`, 87 K, binary + 5 layouts |
+| 30 | **Two fingers at once** | A second finger landing while the first was still held produced two emissions, not one — the case that reads as dropped letters when typing at speed |
 | 4b | **A retracted keyboard is not an invisible wall** | Touches pass through to the app when down and are blocked when up. Both directions, because one proves half |
 | 11 | **Keycode path with no input method at all** | A QML probe binding no text input quit on a synthesised `q` — a real key event to a client that cannot receive `commit_string` |
 | 13 | Terminal correctness | Ctrl+C killed `cat`; Escape produced `^[` and Tab a real tab |
@@ -140,16 +141,21 @@ private dirty, and overridable from the environment.
 
 ## Not yet verified
 
-AC 6 (survives compositor restart), 30 (multitouch — `tests/tap.py` drives one
-finger; two would need a second slot), 31 (slide-off cancels), 32 (long-press
-alternates), 33 (press feedback within one frame), 34 (modifier latching), 38
-(press → commit ≤ 50 ms), and 42–44 (mobileomarchy integration, deliberately
+AC 6 (survives compositor restart), 31 (slide-off cancels), 32 (long-press
+alternates), 33 (press feedback within one frame — first attempt gave 11/14/18 ms
+against a 17 ms bar, so it is borderline rather than unknown), 34 (modifier
+latching), 38 (press → commit — the first attempt measured 90 ms and 90 ms was
+exactly the synthetic hold the test used, because emission happens on release;
+now measured from release and not yet re-run), and 42–44 (mobileomarchy integration, deliberately
 untouched — three other sessions were editing that repo today; the change is
 written up in `packaging/mobileomarchy-integration.md` for review).
 
-30–34 are the touch-interaction criteria and want either a second uinput slot or
-a human thumb. Nothing about them is known to be broken; they are simply not
-tested, and this page does not count untested as passing.
+31–34 are the touch-interaction criteria. `tests/tap.py` now has the gestures
+they need — a second finger landing while the first is held, and dragging between
+points — and `tests/text-probe.qml` gives them an ordinary text field to type
+into rather than a terminal, which is what made the first attempt measure the
+wrong keys. Nothing about them is known to be broken; they are simply not
+finished, and this page does not count untested as passing.
 
 ## The contrast fallback is load-bearing, not a safety net
 
@@ -237,6 +243,24 @@ response — assert which process owns `sm.puri.OSK0` before believing a
 keystroke, poll for windows instead of sleeping, fail below five activates, and
 distinguish "the probe never opened" from "the probe saw nothing" — are worth
 more than the results they produced.
+
+## The device ran out of battery mid-run
+
+Recorded because it is the last thing that happened and it was avoidable. The
+phone was handed over at 6% on the charger; I observed 5%, watched it for 90
+seconds, saw it had not moved, and started a short run anyway on the reasoning
+that charging meant rising. It did not rise — the panel and compositor were
+drawing more than the cable supplied — and the device died partway through the
+touch section.
+
+`Charging` is a direction, not a headroom figure, and a capacity that has not
+moved in 90 seconds is the measurement, not noise. A claim on shared hardware
+needs power headroom as well as availability.
+
+The AC 30 result below survives, because it was measured in the run before this
+one. AC 31, 32, 33 and 38 do not: they were re-pointed at an ordinary text field
+after the first attempt measured them against a terminal, and that re-run is the
+one that died.
 
 ## Notes for whoever runs these next
 

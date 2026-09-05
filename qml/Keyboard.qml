@@ -346,6 +346,10 @@ Item {
                 if (!entry)
                     continue
 
+                // Before any decision about what the release does, for the
+                // same reason markPress is first.
+                Router.markRelease()
+
                 if (entry.cap)
                     entry.cap.pressed = false
 

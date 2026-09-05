@@ -1,9 +1,9 @@
 # Landing this in mobileomarchy
 
-Not applied yet, and deliberately so: two other Claude sessions are editing
-`~/Projects/mobileomarchy` on branch `fix/provisioning-silent-failures` right
-now. This is the exact change to make once the keyboard is proven, written down
-so it can be reviewed before it touches a shared tree.
+Not applied yet, and deliberately so: other Claude sessions have been editing
+`~/Projects/mobileomarchy` all day, and work there lands on `main` rather than a
+feature branch. This is the exact change to make once the keyboard is proven,
+written down so it can be reviewed before it touches a shared tree.
 
 It is four edits and one addition. **`bin/mobileomarchy-toggle-keyboard` is not
 one of them** — that script drives `sm.puri.OSK0`, this keyboard owns that name,

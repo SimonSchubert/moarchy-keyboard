@@ -75,6 +75,13 @@ public:
     // the keyboard feel slow, and a fast commit does not make it feel fast.
     Q_INVOKABLE void markPress();
 
+    // Emission happens on release, not on press (so that sliding off a key can
+    // cancel it -- AC 31). So press-to-wire contains the whole time the finger
+    // was down, which is the user's, not the keyboard's: the first measurement
+    // read 90 ms and 90 ms was exactly the synthetic hold the test used.
+    // AC 38 is about latency the keyboard adds, so it is measured from release.
+    Q_INVOKABLE void markRelease();
+
     // Connected to QQuickWindow::frameSwapped, to close the AC 33 loop.
     void noteFrame();
 
@@ -110,6 +117,7 @@ private:
     void reportLatency(const char *what, const QString &detail);
 
     QElapsedTimer m_sincePress;
+    QElapsedTimer m_sinceRelease;
     bool m_frameReported = true;
 
     InputMethod *m_inputMethod = nullptr;

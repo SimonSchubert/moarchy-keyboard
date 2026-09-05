@@ -207,7 +207,7 @@ cleanup() {
   swaymsg "[app_id=moa-htop] kill"    >/dev/null 2>&1
   swaymsg "[app_id=moa-focus] kill"   >/dev/null 2>&1
   swaymsg "[app_id=moa-cycle] kill"   >/dev/null 2>&1
-  swaymsg "[app_id=moa-multi] kill"   >/dev/null 2>&1
+  swaymsg '[title="^moa text"] kill' >/dev/null 2>&1
   swaymsg '[title="^moa probe"] kill' >/dev/null 2>&1
   swaymsg "[app_id=moa-pwtest] kill"  >/dev/null 2>&1
   swaymsg "[title=\"moa password test\"] kill" >/dev/null 2>&1
@@ -447,72 +447,109 @@ if ours; then
   probe_clear
 fi
 
-# The keyboard logs one "latency: press to ... on the wire" line per emission,
-# with the character in it. That makes the touch criteria assertable from the
-# log instead of by reading a terminal out of a screenshot.
-emissions() { log "$1" | grep -c "on the wire" || true; }
-emitted()   { log "$1" | grep "on the wire" | grep -oE "\(.*\)$" | tr -d '()' | tr '\n' ' '; }
+# --- the touch criteria -----------------------------------------------------
+#
+# Driven against an ordinary text field, NOT a terminal. foot advertises
+# content_purpose = terminal, so the keyboard correctly switches to its terminal
+# layout -- five rows of 60 rather than four of 75 -- and coordinates worked out
+# for the letters layout land on esc and tab instead. Three criteria were
+# measured against the wrong keys before this was noticed, and two of them
+# reported product failures on that basis.
+#
+# The probe puts its field contents in its window title, so these assert on a
+# string rather than on a screenshot of a terminal.
 
-# Letters layout geometry, measured on the device rather than assumed: the
-# gesture strip at the bottom holds an exclusive zone, so the panel sits at
-# y 405..705 rather than 420..720. Four rows of ~74: centres 440, 515, 590, 664.
-# Column centres are unit/2 + n*unit with unit = 36.
+text_probe_start() {
+  swaymsg '[title="^moa text"] kill' >/dev/null 2>&1
+  sleep 1
+  setsid qml6 /tmp/text-probe.qml > /tmp/moa-textprobe.log 2>&1 < /dev/null &
+  for _ in $(seq 1 60); do
+    swaymsg -t get_tree 2>/dev/null | grep -q "moa text" && break
+    sleep 1
+  done
+  swaymsg '[title="^moa text"] focus' >/dev/null 2>&1
+  sleep 2
+}
+
+text_probe_content() {
+  swaymsg -t get_tree 2>/dev/null | python3 -c "
+import json, sys, re
+found = []
+def walk(n):
+    name = n.get('name') or ''
+    m = re.match(r'moa text \[(.*)\]$', name)
+    if m: found.append(m.group(1))
+    for k in n.get('nodes', []) + n.get('floating_nodes', []): walk(k)
+walk(json.load(sys.stdin))
+print(found[-1] if found else '<no probe>')"
+}
+
+# letters layout geometry, measured on the device rather than assumed: the
+# gesture strip holds an exclusive zone at the bottom, so the panel sits at
+# y 405..705 rather than 420..720. Four rows of 75 -> centres 442, 517, 592, 667.
+# Columns are unit/2 + n*unit with unit = 36, so q=18, w=54, e=90; a=18 on row 1.
+
 section "AC 30 -- two fingers at once" || true
 if ours; then
   restart --layout letters || true
-  swaymsg exec "foot -a moa-multi cat -A" >/dev/null 2>&1
-  wait_for_window "moa-multi"
-  swaymsg "[app_id=moa-multi] focus" >/dev/null 2>&1
-  sleep 2
-  S=$(since)
+  text_probe_start
+  before=$(text_probe_content)
   # q and w, the second landing while the first is still held. A single-touch
   # model drops the second, which is what dropped letters feel like at speed.
-  sudo -n python3 /tmp/tap.py --scale 2 --warmup 180,150 --two-finger 18,440 54,440 >/dev/null 2>&1
+  sudo -n python3 /tmp/tap.py --scale 2 --warmup 180,150 --two-finger 18,442 54,442 >/dev/null 2>&1
   sleep 2
-  n=$(emissions "$S")
-  echo "  emitted: $(emitted "$S")"
-  [[ $n -ge 2 ]] && ok "AC 30 (both fingers registered, $n emissions)" \
-                 || no "AC 30 (only $n emission(s) from two fingers)"
+  after=$(text_probe_content)
+  echo "  field: '$before' -> '$after'"
+  if [[ ${#after} -ge 2 ]]; then
+    ok "AC 30 (both fingers registered: '$after')"
+  else
+    no "AC 30 (two fingers produced '${after}')"
+  fi
 fi
 
 section "AC 31 -- sliding off a key cancels it" || true
 if ours; then
-  S=$(since)
+  before=$(text_probe_content)
   # Press q, drag to w, release there. Nothing may be emitted: not q, because
   # the finger left it, and not w, because the press did not begin there.
-  sudo -n python3 /tmp/tap.py --scale 2 --slide 18,440 54,440 >/dev/null 2>&1
+  sudo -n python3 /tmp/tap.py --scale 2 --slide 18,442 54,442 >/dev/null 2>&1
   sleep 2
-  n=$(emissions "$S")
-  [[ $n -eq 0 ]] && ok "AC 31 (nothing emitted)" \
-                 || no "AC 31 (slide emitted $n: $(emitted "$S"))"
+  after=$(text_probe_content)
+  echo "  field: '$before' -> '$after'"
+  [[ "$before" == "$after" ]] && ok "AC 31 (nothing emitted)" \
+                              || no "AC 31 (slide added '${after#"$before"}')"
 fi
 
 section "AC 32 -- long press selects an alternate" || true
 if ours; then
-  S=$(since)
+  before=$(text_probe_content)
   # Hold `a` past the 400 ms threshold and release without moving. Its first
   # alternate is @, so @ is what must arrive -- not a.
-  sudo -n python3 /tmp/tap.py --scale 2 --hold 0.9 18,515 >/dev/null 2>&1
+  sudo -n python3 /tmp/tap.py --scale 2 --hold 0.9 18,517 >/dev/null 2>&1
   sleep 2
-  got=$(emitted "$S")
-  echo "  emitted: $got"
-  case "$got" in
+  after=$(text_probe_content)
+  added=${after#"$before"}
+  echo "  field: '$before' -> '$after'  (added '$added')"
+  case "$added" in
     *@*) ok "AC 32 (long press gave the alternate)" ;;
     *a*) no "AC 32 (gave the base character, so the popup never opened)" ;;
-    *)   no "AC 32 (nothing emitted: '$got')" ;;
+    "")  no "AC 32 (nothing emitted at all)" ;;
+    *)   no "AC 32 (gave '$added')" ;;
   esac
 fi
 
 section "AC 33 + AC 38 -- feedback and commit latency" || true
 if ours; then
   S=$(since)
-  sudo -n python3 /tmp/tap.py --scale 2 18,440 54,440 90,440 >/dev/null 2>&1
+  sudo -n python3 /tmp/tap.py --scale 2 18,442 54,442 90,442 >/dev/null 2>&1
   sleep 2
   echo "  measured:"
   log "$S" | grep "latency:" | sed 's/.*latency: /    /' | head -8
 
-  frame=$(log "$S" | grep "press to first frame" | grep -oE "[0-9]+ ms" | grep -oE "[0-9]+" | sort -n | tail -1)
-  wire=$(log "$S" | grep "on the wire" | grep -oE "to [a-z_ ]+ [0-9]+ ms" | grep -oE "[0-9]+" | sort -n | tail -1)
+  frame=$(log "$S" | grep "press to first frame" | grep -oE "frame [0-9]+ ms" | grep -oE "[0-9]+" | sort -n | tail -1)
+  wire=$(log "$S" | grep "release to" | grep -oE "wire [0-9]+ ms" | grep -oE "[0-9]+" | sort -n | tail -1)
+
+  # One frame at 60 Hz is 16.7 ms; 17 is that rounded up.
   if [[ -n $frame ]]; then
     [[ $frame -le 17 ]] && ok "AC 33 (worst press-to-frame ${frame} ms)" \
                         || no "AC 33 (worst press-to-frame ${frame} ms > 17)"
@@ -520,12 +557,12 @@ if ours; then
     no "AC 33: no frame timing recorded"
   fi
   if [[ -n $wire ]]; then
-    [[ $wire -le 50 ]] && ok "AC 38 (worst press-to-wire ${wire} ms)" \
-                       || no "AC 38 (worst press-to-wire ${wire} ms > 50)"
+    [[ $wire -le 50 ]] && ok "AC 38 (worst release-to-wire ${wire} ms)" \
+                       || no "AC 38 (worst release-to-wire ${wire} ms > 50)"
   else
     no "AC 38: no wire timing recorded"
   fi
-  swaymsg "[app_id=moa-multi] kill" >/dev/null 2>&1
+  swaymsg '[title="^moa text"] kill' >/dev/null 2>&1
 fi
 
 section "AC 19 -- a user layout overrides the shipped one" || true
