@@ -1,5 +1,7 @@
 #pragma once
 
+#include "qmlsingleton.h"
+
 #include <QQmlEngine>
 #include <QtGlobal>
 
@@ -22,7 +24,7 @@ class InputMethod;
 // A keyboard that only commits text cannot type into a terminal. One that only
 // sends keycodes cannot type a character that is not on the keymap. Both, or
 // half the phone is unusable.
-class KeyRouter : public QObject
+class KeyRouter : public QObject, public MainOwnedSingleton<KeyRouter>
 {
     Q_OBJECT
     QML_NAMED_ELEMENT(Router)
@@ -32,26 +34,10 @@ class KeyRouter : public QObject
     Q_PROPERTY(QString suggestedLayout READ suggestedLayout NOTIFY stateChanged)
 
 public:
-    // See the note above the class.
-    static void setInstance(KeyRouter *instance) { s_instance = instance; }
-    static KeyRouter *create(QQmlEngine *, QJSEngine *) {
-        // NOT Q_ASSERT: it compiles out under NDEBUG, and the packaged build is
-        // Release, so a null instance would be a segfault in the field and a
-        // clean abort only on a developer's machine. Returning nullptr makes
-        // QML report an unavailable singleton, which is loud and survivable.
-        if (!s_instance) {
-            qCritical("KeyRouter singleton used before main() set the instance");
-            return nullptr;
-        }
-        // The engine must never delete an object main owns.
-        QQmlEngine::setObjectOwnership(s_instance, QQmlEngine::CppOwnership);
-        return s_instance;
-    }
-
     // Not default-constructible, which is the only reason this singleton
     // worked while Theme and LayoutStore silently did not: a QML_SINGLETON that
-    // CAN be default-constructed is, and create() is never called. See the note
-    // in theme.h.
+    // CAN be default-constructed is, and create() is never called. It went
+    // years without the static_assert that says so; it has one now.
     KeyRouter(InputMethod *inputMethod, VirtualKeyboard *virtualKeyboard,
               QObject *parent = nullptr);
 
@@ -123,5 +109,10 @@ private:
     InputMethod *m_inputMethod = nullptr;
     VirtualKeyboard *m_virtualKeyboard = nullptr;
 
-    inline static KeyRouter *s_instance = nullptr;
 };
+
+// See MainOwnedSingleton in qmlsingleton.h: a default-constructible
+// QML_SINGLETON is built by the engine instead of by create(), and QML then
+// holds a different object from the one main() configured. That shipped once
+// and drew every surface black, so it is a build error instead.
+MOARCHY_SINGLETON_INVARIANT(KeyRouter);

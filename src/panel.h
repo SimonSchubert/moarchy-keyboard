@@ -1,10 +1,11 @@
 #pragma once
 
+#include "qmlsingleton.h"
+
 #include <QObject>
 #include <QQmlEngine>
 #include <QQuickView>
 #include <QRect>
-#include <type_traits>
 
 // The keyboard's one layer surface.
 //
@@ -24,7 +25,7 @@
 //   exclusive zone -> 0    the focused window takes the space back
 //   input region   -> off  touches fall through to whatever is underneath
 //   root item      -> invisible, so the scene graph has nothing to draw
-class Panel : public QObject
+class Panel : public QObject, public MainOwnedSingleton<Panel>
 {
     Q_OBJECT
     QML_NAMED_ELEMENT(Panel)
@@ -41,16 +42,6 @@ public:
         Shown,    // the keyboard
     };
     Q_ENUM(Mode)
-
-    static void setInstance(Panel *instance) { s_instance = instance; }
-    static Panel *create(QQmlEngine *, QJSEngine *) {
-        if (!s_instance) {
-            qCritical("Panel singleton used before main() set the instance");
-            return nullptr;
-        }
-        QQmlEngine::setObjectOwnership(s_instance, QQmlEngine::CppOwnership);
-        return s_instance;
-    }
 
     // No default argument, so the QML engine cannot default-construct its own
     // instance instead of calling create(). See the static_assert below.
@@ -132,12 +123,10 @@ private:
     int m_bottomMargin = -1;
     int m_stripInset = -1;   // -1 until prepare() applies the default
     int m_panelHeight = -1;
-    inline static Panel *s_instance = nullptr;
 };
 
-// Same invariant as Theme and LayoutStore: a default-constructible QML_SINGLETON
-// is built by the engine instead of by create(), and QML then holds a different
-// object from the one main() configured.
-static_assert(!std::is_default_constructible_v<Panel>,
-              "Panel must not be default-constructible: the QML engine would "
-              "build its own instance instead of calling create().");
+// See MainOwnedSingleton in qmlsingleton.h: a default-constructible
+// QML_SINGLETON is built by the engine instead of by create(), and QML then
+// holds a different object from the one main() configured. That shipped once
+// and drew every surface black, so it is a build error instead.
+MOARCHY_SINGLETON_INVARIANT(Panel);

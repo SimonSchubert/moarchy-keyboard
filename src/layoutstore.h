@@ -1,6 +1,6 @@
 #pragma once
 
-#include <type_traits>
+#include "qmlsingleton.h"
 
 #include <QQmlEngine>
 #include <QtGlobal>
@@ -20,7 +20,7 @@
 //
 // Adding a layout is dropping a file in (1) and restarting. Editing one does
 // not need a rebuild.
-class LayoutStore : public QObject
+class LayoutStore : public QObject, public MainOwnedSingleton<LayoutStore>
 {
     Q_OBJECT
     QML_NAMED_ELEMENT(Layouts)
@@ -37,22 +37,6 @@ class LayoutStore : public QObject
     Q_PROPERTY(QUrl iconFontUrl READ iconFontUrl CONSTANT)
 
 public:
-    // See the note above the class.
-    static void setInstance(LayoutStore *instance) { s_instance = instance; }
-    static LayoutStore *create(QQmlEngine *, QJSEngine *) {
-        // NOT Q_ASSERT: it compiles out under NDEBUG, and the packaged build is
-        // Release, so a null instance would be a segfault in the field and a
-        // clean abort only on a developer's machine. Returning nullptr makes
-        // QML report an unavailable singleton, which is loud and survivable.
-        if (!s_instance) {
-            qCritical("LayoutStore singleton used before main() set the instance");
-            return nullptr;
-        }
-        // The engine must never delete an object main owns.
-        QQmlEngine::setObjectOwnership(s_instance, QQmlEngine::CppOwnership);
-        return s_instance;
-    }
-
     // NO default argument on the constructor, deliberately.
     //
     // With `QObject *parent = nullptr` this class is default-constructible, and
@@ -96,17 +80,10 @@ private:
     QStringList m_names;
     QHash<QString, QVariantMap> m_cache;
 
-    inline static LayoutStore *s_instance = nullptr;
 };
 
-// The invariant that keeps QML and main() looking at the same object.
-//
-// A QML_SINGLETON that can be default-constructed is default-constructed BY THE
-// ENGINE, silently, and create() is never called -- so QML gets a blank
-// instance while main configures a different one. That shipped once and drew
-// every surface black. Restoring a default argument to the constructor brings
-// it straight back, so it is a build error instead.
-static_assert(!std::is_default_constructible_v<LayoutStore>,
-              "LayoutStore must not be default-constructible: the QML engine would build "
-              "its own instance instead of calling create(), and QML would then "
-              "hold a different object from the one main() configured.");
+// See MainOwnedSingleton in qmlsingleton.h: a default-constructible
+// QML_SINGLETON is built by the engine instead of by create(), and QML then
+// holds a different object from the one main() configured. That shipped once
+// and drew every surface black, so it is a build error instead.
+MOARCHY_SINGLETON_INVARIANT(LayoutStore);
