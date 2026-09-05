@@ -13,6 +13,8 @@ Item {
     required property var keys
     required property real unit
     required property bool shifted
+    // { shift, ctrl, alt } -> 0 off, 1 latched for one key, 2 locked.
+    required property var modifierStates
 
     readonly property real strips: {
         var total = 0
@@ -43,6 +45,7 @@ Item {
                 required property var modelData
                 spec: modelData
                 shifted: root.shifted
+                modifierStates: root.modifierStates
                 width: root.unit * (modelData.width !== undefined ? modelData.width : 1)
                 height: strip.height
             }

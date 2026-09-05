@@ -41,6 +41,12 @@ Item {
 
     readonly property bool shifted: shiftState > 0
 
+    readonly property var modifierStates: ({
+        shift: shiftState,
+        ctrl: ctrlState,
+        alt: altState
+    })
+
     // Bit values from VirtualKeyboard::Modifier.
     readonly property int modShift: 1
     readonly property int modControl: 2
@@ -98,6 +104,7 @@ Item {
                 keys: modelData.keys
                 unit: keyboard.unit
                 shifted: keyboard.shifted
+                modifierStates: keyboard.modifierStates
                 width: rowsColumn.width
                 height: keyboard.rowHeight
             }

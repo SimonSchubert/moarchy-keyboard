@@ -21,22 +21,32 @@ measure() {
   sleep 6
   local pid; pid=$(pgrep -x moarchy-keyboar | head -1)
   if [[ -z $pid ]]; then echo "$label: FAILED TO START"; return; fi
-  local pss rss anon
+  local pss rss anon dirty
   pss=$(awk '/^Pss:/ {print $2}' /proc/$pid/smaps_rollup)
   rss=$(awk '/^Rss:/ {print $2}' /proc/$pid/smaps_rollup)
   anon=$(awk '/^Pss_Anon:/ {print $2}' /proc/$pid/smaps_rollup)
-  printf "%-38s Pss %6d kB   Rss %6d kB   Anon %6d kB\n" "$label" "$pss" "$rss" "$anon"
+  dirty=$(awk '/^Private_Dirty:/ {print $2}' /proc/$pid/smaps_rollup)
+  printf "%-30s Pss %6d  PrivDirty %6d  Anon %6d  Rss %6d\n" \
+    "$label" "$pss" "$dirty" "$anon" "$rss"
 }
 
 echo "quickshell running: $(pgrep -c -x quickshell)  (sharing depends on it)"
 echo
 
-measure "baseline (defaults)"
-measure "atlas 256"          QSG_ATLAS_WIDTH=256 QSG_ATLAS_HEIGHT=256
-measure "basic render loop"  QSG_RENDER_LOOP=basic
-measure "atlas 256 + basic"  QSG_ATLAS_WIDTH=256 QSG_ATLAS_HEIGHT=256 QSG_RENDER_LOOP=basic
-measure "no qml disk cache"  QML_DISABLE_DISK_CACHE=1
+measure "baseline"            X=1
+measure "atlas 256"           QSG_ATLAS_WIDTH=256 QSG_ATLAS_HEIGHT=256
+measure "basic render loop"   QSG_RENDER_LOOP=basic
+measure "no JS JIT"           QV4_FORCE_INTERPRETER=1
+measure "transient images"    QSG_TRANSIENT_IMAGES=1
+measure "atlas+basic+nojit"   QSG_ATLAS_WIDTH=256 QSG_ATLAS_HEIGHT=256 \
+                              QSG_RENDER_LOOP=basic QV4_FORCE_INTERPRETER=1
 
 echo
-echo "for reference, squeekboard measured on this device 2026-09-05:"
-echo "  Pss 50822 kB   Rss 74400 kB"
+echo "squeekboard on this device 2026-09-05, for comparison:"
+echo "  Pss 50822   PrivDirty 41458   Rss 74400"
+echo
+echo "NOTE ON THE METRIC. AC 35 is written against Pss, and Pss charges us half"
+echo "of every library page we share with quickshell -- pages that are already"
+echo "resident and would STAY resident if this process exited. Private_Dirty is"
+echo "the honest measure of what adding the process actually costs the device."
+echo "Report both; do not quietly switch to whichever one flatters the result."

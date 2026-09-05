@@ -13,8 +13,22 @@ Item {
 
     required property var spec
     required property bool shifted
+    required property var modifierStates
     property bool pressed: false
-    property bool latched: false
+
+    // 0 off, 1 latched for the next key only, 2 locked until pressed again.
+    // Derived rather than assigned, because nothing was assigning it: a latched
+    // Shift looked exactly like an idle one, which makes the difference between
+    // "the next letter is capital" and "every letter is capital" invisible
+    // (AC 34).
+    readonly property int modifierState: {
+        if (keyType !== "modifier" || spec.modifier === undefined)
+            return 0
+        var state = modifierStates[spec.modifier]
+        return state === undefined ? 0 : state
+    }
+    readonly property bool latched: modifierState > 0
+    readonly property bool locked: modifierState === 2
 
     readonly property string keyType: spec.type !== undefined ? spec.type : "character"
     readonly property bool isSpace: keyType === "space"
@@ -32,11 +46,7 @@ Item {
     }
 
     readonly property color fill: {
-        if (pressed)
-            return Colors.accent
-        if (latched)
-            return Colors.accent
-        if (isAccent)
+        if (pressed || locked || isAccent)
             return Colors.accent
         if (keyType === "character")
             return Colors.keyFill
@@ -44,8 +54,10 @@ Item {
     }
 
     readonly property color textColor: {
-        if (pressed || latched || isAccent)
+        if (pressed || locked || isAccent)
             return Colors.accentText
+        if (latched)
+            return Colors.accent          // one-shot: tinted, not filled
         return keyType === "character" ? Colors.keyText : Colors.modifierText
     }
 
@@ -55,6 +67,10 @@ Item {
         anchors.margins: 2
         radius: 5
         color: root.fill
+        // A one-shot latch is an outline; a lock is a fill. Two different
+        // states must not look the same.
+        border.width: root.latched && !root.locked ? 2 : 0
+        border.color: Colors.accent
         // No animation on press: a colour transition, however short, is one more
         // thing between the finger and the feedback, and AC 33 gives the whole
         // budget to the first frame. Release fades, press does not.
