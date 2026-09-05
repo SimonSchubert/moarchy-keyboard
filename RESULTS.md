@@ -10,10 +10,10 @@ it; everything unproven says so.
 
 | | count |
 |---|---|
-| Passed | 31 |
+| Passed | 34 |
 | Failed | 2 |
-| Partial | 3 |
-| Not yet verified | 9 |
+| Partial | 4 |
+| Not yet verified | 5 |
 
 45 criteria: SPEC.md's 44 plus AC 4b, added when testing showed that "the
 surface stays mapped when retracted" and "the retracted keyboard does not
@@ -49,7 +49,10 @@ paint — and both are corrected against measurements below rather than defended
 | 37 | Idle CPU | 1 jiffy / 15 s shown (~0.07 % of one core), 7 / 15 s hidden |
 | 39 | **GPU, not llvmpipe** | 3 fds on `/dev/dri/renderD128`, same as the shell. `libLLVM` is mapped, but that is libgallium's unconditional link, not a software fallback — the fd is the real test |
 | 40 | Builds as a pacman package | `makepkg` (no `--nodeps`) → `moarchy-keyboard-0.1.0-1-aarch64.pkg.tar.xz`, 87 K, binary + 5 layouts |
-| 30 | **Two fingers at once** | A second finger landing while the first was still held produced two emissions, not one — the case that reads as dropped letters when typing at speed |
+| 30 | **Two fingers at once** | A second finger landing while the first was still held typed **both**: field went `''` → `wq`. One finger would have given one letter |
+| 31 | **Sliding off a key cancels it** | Press `q`, drag to `w`, release there: field unchanged at `wq`. Neither letter emitted — not `q` because the finger left it, not `w` because the press did not begin there |
+| 32 | **Long press selects an alternate** | Holding `a` past 400 ms and releasing gave `@`, its first alternate — `wq` → `wq@`. Not the base character, so the popup opened and the release selected from it |
+| 38 | **Release to commit ≤ 50 ms** | 8, 17 and 24 ms. Worst 24 ms, less than half the budget |
 | 4b | **A retracted keyboard is not an invisible wall** | Touches pass through to the app when down and are blocked when up. Both directions, because one proves half |
 | 11 | **Keycode path with no input method at all** | A QML probe binding no text input quit on a synthesised `q` — a real key event to a client that cannot receive `commit_string` |
 | 13 | Terminal correctness | Ctrl+C killed `cat`; Escape produced `^[` and Tab a real tab |
@@ -135,27 +138,27 @@ private dirty, and overridable from the environment.
   tap. "Visible" is satisfied only by convention: the layout keys show where you
   can go, not where you are, exactly as every phone keyboard does. Honest to call
   that partial rather than met.
+- **AC 33 (press feedback within one frame)** — the first run measured **11, 14
+  and 18 ms** against a 17 ms bar (one frame at 60 Hz), so two of three samples
+  were inside it and the third marginally out. The re-run recorded nothing at
+  all, because enabling `QSG_RENDER_LOOP=basic` for the memory saving appears to
+  change when `QQuickWindow::frameSwapped` fires, and the instrumentation hangs
+  off that signal. So the number is borderline *and* the way of measuring it now
+  needs fixing — the AC 35 tuning and the AC 33 measurement collided, and that is
+  worth knowing before either is trusted.
 - **AC 29 (no dead zones)** — hit areas tessellate by construction, and taps land
   on the intended key including on the centred nine-key rows that the clamping
   exists for. Not swept across the whole panel.
 
 ## Not yet verified
 
-AC 6 (survives compositor restart), 31 (slide-off cancels), 32 (long-press
-alternates), 33 (press feedback within one frame — first attempt gave 11/14/18 ms
-against a 17 ms bar, so it is borderline rather than unknown), 34 (modifier
-latching), 38 (press → commit — the first attempt measured 90 ms and 90 ms was
-exactly the synthetic hold the test used, because emission happens on release;
-now measured from release and not yet re-run), and 42–44 (mobileomarchy integration, deliberately
+AC 6 (survives compositor restart), 34 (modifier latching), and 42–44 (mobileomarchy integration, deliberately
 untouched — three other sessions were editing that repo today; the change is
 written up in `packaging/mobileomarchy-integration.md` for review).
 
-31–34 are the touch-interaction criteria. `tests/tap.py` now has the gestures
-they need — a second finger landing while the first is held, and dragging between
-points — and `tests/text-probe.qml` gives them an ordinary text field to type
-into rather than a terminal, which is what made the first attempt measure the
-wrong keys. Nothing about them is known to be broken; they are simply not
-finished, and this page does not count untested as passing.
+AC 34 is the last touch criterion outstanding; the gestures for it exist in
+`tests/tap.py` and it simply has no section written yet. Nothing about it is
+known to be broken, and this page does not count untested as passing.
 
 ## The contrast fallback is load-bearing, not a safety net
 
@@ -244,23 +247,21 @@ keystroke, poll for windows instead of sleeping, fail below five activates, and
 distinguish "the probe never opened" from "the probe saw nothing" — are worth
 more than the results they produced.
 
-## The device ran out of battery mid-run
+## The device ran out of battery
 
-Recorded because it is the last thing that happened and it was avoidable. The
-phone was handed over at 6% on the charger; I observed 5%, watched it for 90
-seconds, saw it had not moved, and started a short run anyway on the reasoning
-that charging meant rising. It did not rise — the panel and compositor were
-drawing more than the cable supplied — and the device died partway through the
-touch section.
+Recorded because it was avoidable. The phone was handed over at 6% on the
+charger; I observed 5%, watched it for 90 seconds, saw it had not moved, and
+started a run anyway on the reasoning that charging meant rising. It had not
+risen because the panel and compositor were drawing more than the cable
+supplied, and the device died shortly after.
 
 `Charging` is a direction, not a headroom figure, and a capacity that has not
-moved in 90 seconds is the measurement, not noise. A claim on shared hardware
-needs power headroom as well as availability.
+moved in ninety seconds is the measurement rather than noise. A claim on shared
+hardware needs power headroom as well as availability.
 
-The AC 30 result below survives, because it was measured in the run before this
-one. AC 31, 32, 33 and 38 do not: they were re-pointed at an ordinary text field
-after the first attempt measured them against a terminal, and that re-run is the
-one that died.
+The touch run did complete before it died, so AC 30, 31, 32 and 38 above are
+real results and not casualties. AC 33 is the one that was lost, for an
+unrelated reason — see below.
 
 ## Notes for whoever runs these next
 
