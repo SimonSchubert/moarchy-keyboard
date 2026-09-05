@@ -14,8 +14,10 @@ pkg_check_modules(XkbCommon REQUIRED IMPORTED_TARGET xkbcommon)
 qt_standard_project_setup(REQUIRES 6.5)
 
 # The QML lives in qml/ rather than at the module root, which QTP0004 wants a
-# qmldir for. NEW makes Qt generate one.
-if(POLICY QTP0004)
+# qmldir for; NEW makes Qt generate one. No if(POLICY ...) guard -- that tests
+# CMake's own policy registry, never Qt's, so it is always false and silently
+# skips the set.
+if(QT_KNOWN_POLICY_QTP0004)
   qt_policy(SET QTP0004 NEW)
 endif()
 

@@ -10,10 +10,10 @@ it; everything unproven says so.
 
 | | count |
 |---|---|
-| Passed | 19 |
+| Passed | 21 |
 | Failed | 1 |
 | Partial | 4 |
-| Not yet verified | 20 |
+| Not yet verified | 18 |
 
 The keyboard works: it raises itself, types into both kinds of client, themes
 live, and keeps one layer surface. The one outright failure is the memory
@@ -42,6 +42,8 @@ target, which was a number I picked without evidence — see below.
 | 28 | Geometry | `layer surface up: 360 x 300`; `set_anchor(14)` = left+right+bottom |
 | 37 | Idle CPU | 1 jiffy / 15 s shown (~0.07 % of one core), 7 / 15 s hidden |
 | 39 | **GPU, not llvmpipe** | 3 fds on `/dev/dri/renderD128`, same as the shell. `libLLVM` is mapped, but that is libgallium's unconditional link, not a software fallback — the fd is the real test |
+| 40 | Builds as a pacman package | `makepkg` (no `--nodeps`) → `moarchy-keyboard-0.1.0-1-aarch64.pkg.tar.xz`, 87 K, binary + 5 layouts |
+| 41 | Dependencies available | The same `makepkg` run validated the `depends` array against an Arch ARM image holding only `qt6-base`, `qt6-declarative`, `qt6-wayland`, `layer-shell-qt`, `wayland`, `libxkbcommon` |
 
 ## Failed
 
@@ -84,13 +86,31 @@ to the truth rather than the hope.
 
 AC 5 (never steals focus), 6 (survives compositor restart), 7 (handles
 `unavailable`), 11 (keycode path with **no** input method — `foot` speaks
-text-input-v3, so this needs a client that does not), 14 (backspace), 16
-(password fields), 18–20 (layout data, user override, switching), 30 (multitouch),
-31 (slide-off cancels), 32 (long-press alternates), 33 (press feedback ≤ 1 frame),
-34 (modifier latching), 36 (cold start ≤ 800 ms), 38 (press → commit ≤ 50 ms),
-40–41 (packaging — `packaging/PKGBUILD` written but never built), 42–44
-(mobileomarchy integration, deliberately untouched: two other sessions are
-editing that repo right now).
+text-input-v3, so this needs a client that does not; `tests/acceptance.sh` uses
+htop, which has no text input, and asserts that a synthesised `q` quits it), 14
+(backspace), 16 (password fields), 18–20 (layout data, user override,
+switching), 30 (multitouch), 31 (slide-off cancels), 32 (long-press alternates),
+33 (press feedback ≤ 1 frame), 34 (modifier latching), 36 (cold start ≤ 800 ms),
+38 (press → commit ≤ 50 ms), 42–44 (mobileomarchy integration, deliberately
+untouched: two other sessions are editing that repo right now).
+
+`tests/acceptance.sh` covers all of these that hardware can answer, in one pass.
+
+## Fixed since the first run
+
+- **Non-ASCII was text-path only.** Characters outside the us keymap — every
+  long-press accent, `€`, `—`, `«` — had no keycode, so in a terminal (which has
+  no text input to commit a string to) they were dropped with a log line. The
+  keymap is now generated at startup from the union of every character the
+  loaded layouts declare: us for the ASCII half, plus one spare keycode each for
+  the rest. Verified offline with `moarchy-keyboard --dump-keymap`, which needs
+  no compositor: **112 characters across 5 layouts, 43 generated keys, compiles.**
+  Capacity is 56 slots (xkb `<I200>`–`<I255>`), so 13 spare; past that the code
+  warns and degrades to text-path-only rather than typing the wrong character.
+- **Latched modifiers were invisible.** `KeyCap.latched` was declared and never
+  assigned, so a latched Shift looked identical to an idle one. Now a one-shot
+  latch draws as an outline and a lock as a fill, which are also distinct from
+  each other.
 
 ## Notes for whoever runs these next
 

@@ -14,6 +14,7 @@
 #include <QQmlContext>
 #include <QQuickView>
 #include <QStandardPaths>
+#include <QTextStream>
 
 Q_LOGGING_CATEGORY(lcMain, "moarchy.main")
 
@@ -69,7 +70,34 @@ int main(int argc, char *argv[])
         QStringLiteral("name"), QStringLiteral("letters"));
     parser.addOption(layoutOption);
 
+    QCommandLineOption dumpKeymapOption(
+        QStringList { QStringLiteral("dump-keymap") },
+        QStringLiteral("Print the generated xkb keymap, check it compiles, and exit. "
+                       "Needs no compositor."));
+    parser.addOption(dumpKeymapOption);
+
     parser.process(app);
+
+    if (parser.isSet(dumpKeymapOption)) {
+        LayoutStore store;
+        VirtualKeyboard probe;
+        QString compileError;
+        const QStringList characters = store.allCharacters();
+        const QString source = probe.keymapSource(characters, &compileError);
+
+        QTextStream out(stdout);
+        out << source;
+        QTextStream err(stderr);
+        err << "layouts: " << store.names().join(QLatin1String(", ")) << "\n"
+            << "characters: " << characters.size() << ", generated keys: "
+            << probe.generatedKeyCount() << "\n";
+        if (!compileError.isEmpty()) {
+            err << "COMPILE FAILED: " << compileError << "\n";
+            return 1;
+        }
+        err << "keymap compiles\n";
+        return 0;
+    }
 
     // --- Wayland ------------------------------------------------------------
     WaylandConnection connection;
@@ -77,8 +105,14 @@ int main(int argc, char *argv[])
     if (!connection.open(&error))
         return fail(QStringLiteral("cannot start"), error);
 
+    // Layouts are loaded before the keyboard, because the keymap is compiled
+    // from the characters they declare -- that is what lets a long-press
+    // accent, a euro sign or an em dash be typed into a terminal, which has no
+    // text input to commit a string to.
+    LayoutStore layouts;
+
     VirtualKeyboard virtualKeyboard;
-    if (!virtualKeyboard.init(&connection, &error))
+    if (!virtualKeyboard.init(&connection, layouts.allCharacters(), &error))
         return fail(QStringLiteral("virtual keyboard unavailable"), error);
 
     InputMethod inputMethod;
@@ -101,8 +135,6 @@ int main(int argc, char *argv[])
 
     Theme theme;
     theme.start(parser.value(colorsOption));
-
-    LayoutStore layouts;
 
     OskService osk;
     if (!osk.registerOnBus(&error)) {

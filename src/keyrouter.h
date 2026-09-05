@@ -66,10 +66,6 @@ Q_SIGNALS:
     void latchedModifiersChanged();
 
 private:
-    // Returns 0 when the character is not reachable on the us keymap.
-    static uint32_t keycodeForCharacter(const QString &character, bool *needsShift);
-    static uint32_t keycodeForName(const QString &name);
-
     InputMethod *m_inputMethod = nullptr;
     VirtualKeyboard *m_virtualKeyboard = nullptr;
     VirtualKeyboard::Modifiers m_latched = VirtualKeyboard::NoModifiers;

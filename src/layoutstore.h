@@ -30,6 +30,11 @@ public:
 
     void reload();
 
+    // Every distinct single-character string any loaded layout can emit,
+    // including long-press alternates. VirtualKeyboard compiles a keymap that
+    // covers these, so none of them is text-path-only.
+    QStringList allCharacters();
+
 Q_SIGNALS:
     void changed();
 

@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QLoggingCategory>
+#include <QSet>
 #include <QStandardPaths>
 
 Q_LOGGING_CATEGORY(lcLayouts, "moarchy.layouts")
@@ -82,4 +83,35 @@ QVariantMap LayoutStore::layout(const QString &name)
 
     qCWarning(lcLayouts) << "no layout named" << name << "on any search path";
     return {};
+}
+
+QStringList LayoutStore::allCharacters()
+{
+    QSet<QString> found;
+
+    for (const QString &name : m_names) {
+        const QVariantMap parsed = layout(name);
+        for (const QVariant &rowValue : parsed.value(QStringLiteral("rows")).toList()) {
+            const QVariantMap row = rowValue.toMap();
+            for (const QVariant &keyValue : row.value(QStringLiteral("keys")).toList()) {
+                const QVariantMap key = keyValue.toMap();
+
+                const QString text = key.value(QStringLiteral("text")).toString();
+                if (text.size() == 1)
+                    found.insert(text);
+
+                for (const QVariant &alt : key.value(QStringLiteral("alt")).toList()) {
+                    const QString value = alt.toString();
+                    if (value.size() == 1)
+                        found.insert(value);
+                }
+            }
+        }
+    }
+
+    QStringList characters(found.begin(), found.end());
+    // Sorted so the same layouts always produce the same keymap, which makes a
+    // keycode reproducible between runs and a bug report worth something.
+    characters.sort();
+    return characters;
 }
