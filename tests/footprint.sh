@@ -30,7 +30,16 @@ measure() {
     "$label" "$pss" "$dirty" "$anon" "$rss"
 }
 
+# Free the seat first. zwp_input_method_manager_v2 grants one input method per
+# seat, so with squeekboard (or a leftover instance) running, every variant here
+# starts, refuses and exits -- which the first run of this script reported as
+# six identical "FAILED TO START" lines that said nothing about memory.
+pkill -x squeekboard 2>/dev/null
+pkill -x moarchy-keyboar 2>/dev/null
+sleep 2
+
 echo "quickshell running: $(pgrep -c -x quickshell)  (sharing depends on it)"
+echo "seat free: $([ -z "$(pgrep -x squeekboard)" ] && echo yes || echo NO)"
 echo
 
 measure "baseline"            X=1
