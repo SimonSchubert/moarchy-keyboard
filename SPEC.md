@@ -325,9 +325,11 @@ with a default and built. All five are cheap to change; none is load-bearing.
    and the phone has a vibrator, but it is a new runtime dependency for a
    preference, and a keyboard that buzzes is a keyboard that drains. Easy to add
    later behind a setting.
-2. **Panel height.** *300 of the 720 logical pixels*, ~42%, which is where
-   Android and iOS both sit on a phone this shape. Four rows plus a function row
-   on the terminal layout; four rows elsewhere. One constant in `src/panel.cpp`.
+2. **Panel height.** *200 of the 720 logical pixels*, ~28%, settable with
+   `--panel-height`. Started at 300, which was reported as keys that were too
+   tall and measured 36 wide by 75 high -- more than twice as tall as wide, which
+   reads as a stretched keyboard rather than a keyboard. 200 gives 50 on a
+   four-row layout and 40 on the terminal layout''s five, against keys 32 wide.
 3. **Number row.** *Not always present.* Digits live behind a long-press on the
    top letter row and on the symbols layout, the Android convention. An
    always-present number row costs a fifth of the panel height, and on a screen

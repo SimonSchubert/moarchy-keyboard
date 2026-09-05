@@ -25,6 +25,9 @@ import moarchy
 Item {
     id: keyboard
 
+    // Family name of Omarchy's icon font, or empty if it did not load.
+    property string iconFamily: ""
+
     // -- layout ------------------------------------------------------------
     property string layoutName: Layouts.initialLayout
     property var layout: Layouts.layout(layoutName)
@@ -144,6 +147,7 @@ Item {
                 unit: keyboard.unit
                 shifted: keyboard.shifted
                 modifierStates: keyboard.modifierStates
+                iconFamily: keyboard.iconFamily
                 width: rowsColumn.width
                 height: keyboard.rowHeight
             }

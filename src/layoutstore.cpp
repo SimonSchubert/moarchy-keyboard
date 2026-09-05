@@ -115,3 +115,26 @@ QStringList LayoutStore::allCharacters()
     characters.sort();
     return characters;
 }
+
+QUrl LayoutStore::iconFontUrl() const
+{
+    // Omarchy is vendored to a path every omarchy-* script hardcodes, so this
+    // is where it is unless OMARCHY_PATH says otherwise.
+    QStringList roots;
+    const QByteArray fromEnv = qgetenv("OMARCHY_PATH");
+    if (!fromEnv.isEmpty())
+        roots << QString::fromLocal8Bit(fromEnv);
+    roots << QDir::homePath() + QStringLiteral("/.local/share/omarchy");
+
+    for (const QString &root : roots) {
+        const QString path = root + QStringLiteral("/default/fonts/omarchy/omarchy.ttf");
+        if (QFile::exists(path)) {
+            qCDebug(lcLayouts) << "icon font:" << path;
+            return QUrl::fromLocalFile(path);
+        }
+    }
+
+    qCInfo(lcLayouts) << "no omarchy icon font found; keys that ask for it will "
+                         "use their text fallback";
+    return {};
+}

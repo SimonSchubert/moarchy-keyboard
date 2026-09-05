@@ -15,6 +15,7 @@ Item {
     required property var spec
     required property bool shifted
     required property var modifierStates
+    required property string iconFamily
     property bool pressed: false
 
     // 0 off, 1 latched for the next key only, 2 locked until pressed again.
@@ -38,7 +39,15 @@ Item {
     readonly property var alternates: spec.alt !== undefined ? spec.alt : []
     readonly property bool hasAlternates: alternates.length > 0
 
+    // A key may ask to be drawn from an icon font. If that font is not
+    // available the key falls back to a text label rather than to a
+    // missing-glyph box, which is the difference between a keyboard that looks
+    // plainer than intended and one that looks broken.
+    readonly property bool usesIcon: spec.font === "omarchy" && root.iconFamily !== ""
+
     readonly property string label: {
+        if (usesIcon && spec.glyph !== undefined)
+            return spec.glyph
         if (spec.label !== undefined)
             return spec.label
         if (spec.text !== undefined)
@@ -89,8 +98,9 @@ Item {
             anchors.centerIn: parent
             text: root.label
             color: root.textColor
-            font.pixelSize: root.keyType === "character" ? 19 : 13
-            font.family: "sans-serif"
+            font.pixelSize: root.usesIcon ? 20
+                            : (root.keyType === "character" ? 19 : 13)
+            font.family: root.usesIcon ? root.iconFamily : "sans-serif"
             renderType: Text.NativeRendering
         }
 

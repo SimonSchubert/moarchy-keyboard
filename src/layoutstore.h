@@ -6,6 +6,7 @@
 #include <QtGlobal>
 
 #include <QHash>
+#include <QUrl>
 #include <QObject>
 #include <QStringList>
 #include <QVariantMap>
@@ -28,6 +29,12 @@ class LayoutStore : public QObject
     // Which layout to open on. Lives here rather than as a loose context
     // property so the QML has no unqualified globals left at all.
     Q_PROPERTY(QString initialLayout READ initialLayout CONSTANT)
+
+    // Omarchy's own icon font, which carries its logo at \ue900 -- the same
+    // glyph the shell's menu widget uses in the bar. Empty if it is not
+    // installed, and the QML falls back to a text label rather than drawing a
+    // missing-glyph box.
+    Q_PROPERTY(QUrl iconFontUrl READ iconFontUrl CONSTANT)
 
 public:
     // See the note above the class.
@@ -64,6 +71,8 @@ public:
     QStringList names() const { return m_names; }
 
     QString initialLayout() const { return m_initialLayout; }
+
+    QUrl iconFontUrl() const;
     void setInitialLayout(const QString &name) { m_initialLayout = name; }
 
     // The parsed layout, or an empty map with a warning logged. QML asks for

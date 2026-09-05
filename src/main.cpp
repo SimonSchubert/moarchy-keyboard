@@ -20,6 +20,7 @@
 #include <QQuickView>
 #include <QQuickWindow>
 #include <QStandardPaths>
+#include <functional>
 #include <QTextStream>
 
 Q_LOGGING_CATEGORY(lcMain, "moarchy.main")
@@ -144,6 +145,19 @@ int main(int argc, char *argv[])
                        "region and inset from the keys. Default 20."),
         QStringLiteral("px"));
     parser.addOption(backEdgeOption);
+
+    QCommandLineOption panelHeightOption(
+        QStringList { QStringLiteral("panel-height") },
+        QStringLiteral("Keyboard height in logical pixels. Default 200."),
+        QStringLiteral("px"));
+    parser.addOption(panelHeightOption);
+
+    QCommandLineOption bottomMarginOption(
+        QStringList { QStringLiteral("bottom-margin") },
+        QStringLiteral("Logical pixels to leave below the keyboard for "
+                       "mobileomarchy's gesture strip. Default 24."),
+        QStringLiteral("px"));
+    parser.addOption(bottomMarginOption);
 
     QCommandLineOption checkLayoutsOption(
         QStringList { QStringLiteral("check-layouts") },
@@ -458,6 +472,21 @@ int main(int argc, char *argv[])
             return fail(QStringLiteral("bad --back-edge-inset"),
                         parser.value(backEdgeOption));
         panel.setBackEdgeInset(px);
+    }
+
+    for (const auto &[option, apply] : {
+             std::pair { std::cref(panelHeightOption),
+                         std::function<void(int)>([&panel](int px) { panel.setPanelHeight(px); }) },
+             std::pair { std::cref(bottomMarginOption),
+                         std::function<void(int)>([&panel](int px) { panel.setBottomMargin(px); }) },
+         }) {
+        if (!parser.isSet(option))
+            continue;
+        bool ok = false;
+        const int px = parser.value(option).toInt(&ok);
+        if (!ok || px < 0)
+            return fail(QStringLiteral("bad geometry option"), parser.value(option));
+        apply(px);
     }
 
     if (!panel.prepare(&error))

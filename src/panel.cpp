@@ -13,11 +13,35 @@ Q_LOGGING_CATEGORY(lcPanel, "moarchy.panel")
 
 namespace {
 
-// Open question 2 in SPEC.md, answered with a default rather than left blocking:
-// 4 character rows plus a function row, at a height that leaves the app usable
-// above it. 300 of the screen's 720 logical pixels is ~42%, which is where
-// Android and iOS both sit on a phone this shape.
-constexpr int kPanelHeight = 300;
+// 220 of the screen's 720 logical pixels, ~31%.
+//
+// Was 300, which made the keys 36 wide by 75 tall on a four-row layout -- more
+// than twice as tall as wide, which reads as a stretched keyboard rather than a
+// keyboard. Android sits nearer 40x48 on a 360dp-wide screen. With the side
+// margins taking the keys to 32 wide, 200 gives 50 on a four-row layout and 40
+// on the terminal layout's five -- and hands 100px back to the app.
+constexpr int kDefaultPanelHeight = 200;
+
+// Zero, and the reason is worth writing down because a margin here looks like
+// the obvious fix and is not.
+//
+// The gesture strip -- mobileomarchy's home pill -- anchors to the bottom of the
+// same Overlay layer with ExclusionMode.Auto. wlroots arranges layer surfaces in
+// map order, and each surface's exclusive zone shrinks the usable area for the
+// ones arranged AFTER it. Map first and you take the screen edge.
+//
+// So when this keyboard mapped at startup it was arranged first, its exclusive
+// zone claimed the bottom of the output, and the strip was then placed in what
+// was left -- floating above the keyboard, which is exactly backwards. The pill
+// belongs at the screen edge under the thumb.
+//
+// A bottom margin does not fix that. It moves this surface up but leaves the
+// reservation in place, so the strip still lands above it and the margin shows
+// as a band of wallpaper below the keys. That was tried, and that is what it
+// looked like.
+//
+// The fix is ordering, not geometry: see the deferred map in Panel::setShown.
+constexpr int kDefaultBottomMargin = 0;
 
 // The left band mobileomarchy's back-edge gesture owns: Overlay layer, left,
 // full height, Style.space(16), and ExclusionMode.Ignore -- so it reserves no
@@ -87,6 +111,10 @@ bool Panel::prepare(QString *error)
 {
     if (m_backEdgeInset < 0)
         m_backEdgeInset = kDefaultBackEdgeInset;
+    if (m_panelHeight < 0)
+        m_panelHeight = kDefaultPanelHeight;
+    if (m_bottomMargin < 0)
+        m_bottomMargin = kDefaultBottomMargin;
 
     m_view = new QQuickView;
     m_view->setResizeMode(QQuickView::SizeRootObjectToView);
@@ -98,7 +126,6 @@ bool Panel::prepare(QString *error)
         return false;
     }
 
-    m_panelHeight = kPanelHeight;
     const int width = screen->geometry().width();
 
     LayerShellQt::Window *layerShell = LayerShellQt::Window::get(m_view);
@@ -134,6 +161,8 @@ bool Panel::prepare(QString *error)
 
     layerShell->setScope(QStringLiteral("moarchy-keyboard"));
     layerShell->setExclusiveZone(0);
+    // Sit above the gesture strip rather than on top of it.
+    layerShell->setMargins(QMargins(0, 0, 0, m_bottomMargin));
     layerShell->setDesiredSize(QSize(width, m_panelHeight));
 
     m_view->resize(width, m_panelHeight);
@@ -152,11 +181,21 @@ bool Panel::load(const QUrl &source, QString *error)
         return false;
     }
 
-    // Mapped once, here, and left mapped for the life of the process.
-    m_view->show();
-    applyVisibility();
-
-    qCInfo(lcPanel) << "layer surface up:" << m_view->width() << "x" << m_panelHeight;
+    // NOT shown here.
+    //
+    // The surface is mapped on first use instead, by setShown. Mapping at
+    // startup put this keyboard ahead of mobileomarchy's gesture strip in the
+    // compositor's arrangement order, and a layer surface arranged first takes
+    // the screen edge -- which stranded the home pill above the keyboard.
+    // Deferring the map until a text field is focused guarantees the shell's
+    // surfaces are already arranged, so the strip keeps the edge and this
+    // keyboard is placed above it.
+    //
+    // AC 2 is unaffected and still exactly true: one surface created, none ever
+    // destroyed. It says the surface outlives every activate/deactivate cycle,
+    // not that it must exist before the first one.
+    qCInfo(lcPanel) << "panel prepared:" << m_view->width() << "x" << m_panelHeight
+                    << "(surface maps on first show)";
     return true;
 }
 
@@ -165,6 +204,16 @@ void Panel::setShown(bool shown)
     if (m_shown == shown)
         return;
     m_shown = shown;
+
+    // First show maps the surface. Every later one only changes the input
+    // region, the exclusive zone and the root item's visibility -- the surface
+    // itself is never unmapped again.
+    if (m_shown && !m_mapped) {
+        m_mapped = true;
+        m_view->show();
+        qCInfo(lcPanel) << "layer surface up:" << m_view->width() << "x" << m_panelHeight;
+    }
+
     applyVisibility();
 }
 
@@ -174,8 +223,10 @@ void Panel::applyVisibility()
         return;
 
     LayerShellQt::Window *layerShell = LayerShellQt::Window::get(m_view);
+    // The zone has to cover the margin too, or the app under the keyboard is
+    // resized to the wrong height and the last row sits over its content.
     if (layerShell)
-        layerShell->setExclusiveZone(m_shown ? m_panelHeight : 0);
+        layerShell->setExclusiveZone(m_shown ? m_panelHeight + m_bottomMargin : 0);
 
     // Everything except the back-edge band. Not the whole surface: see
     // kBackEdgeInset.

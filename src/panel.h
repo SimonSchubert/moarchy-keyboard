@@ -45,6 +45,11 @@ public:
     // See the note in panel.cpp for why it is not simply 16.
     int backEdgeInset() const { return m_backEdgeInset; }
     void setBackEdgeInset(int px) { m_backEdgeInset = px; }
+
+    void setPanelHeight(int px) { m_panelHeight = px; }
+
+    // Leaves the bottom band to mobileomarchy's gesture strip.
+    void setBottomMargin(int px) { m_bottomMargin = px; }
     int panelHeight() const { return m_panelHeight; }
 
     QQuickView *view() const { return m_view; }
@@ -57,6 +62,8 @@ private:
 
     QQuickView *m_view = nullptr;
     bool m_shown = false;
+    bool m_mapped = false;
     int m_backEdgeInset = -1;   // -1 until prepare() applies the default
-    int m_panelHeight = 0;
+    int m_bottomMargin = -1;
+    int m_panelHeight = -1;
 };

@@ -2,27 +2,148 @@
   "name": "symbols",
   "label": "?123",
   "rows": [
-    { "keys": [
-      { "text": "1" }, { "text": "2" }, { "text": "3" }, { "text": "4" }, { "text": "5" },
-      { "text": "6" }, { "text": "7" }, { "text": "8" }, { "text": "9" }, { "text": "0" }
-    ]},
-    { "keys": [
-      { "text": "@" }, { "text": "#" }, { "text": "$" }, { "text": "_" }, { "text": "&" },
-      { "text": "-" }, { "text": "+" }, { "text": "(" }, { "text": ")" }, { "text": "/" }
-    ]},
-    { "keys": [
-      { "type": "layout", "layout": "symbols-extended", "label": "=\\<", "width": 1.5 },
-      { "text": "*" }, { "text": "\"" }, { "text": "'" }, { "text": ":" },
-      { "text": ";" }, { "text": "!" }, { "text": "?" },
-      { "type": "action", "key": "BackSpace", "label": "⌫", "width": 1.5, "repeats": true }
-    ]},
-    { "keys": [
-      { "type": "layout", "layout": "letters", "label": "abc", "width": 1.5 },
-      { "text": "," },
-      { "text": " ", "label": "", "width": 4, "type": "space" },
-      { "text": "." },
-      { "type": "layout", "layout": "terminal", "label": "⌘", "width": 1 },
-      { "type": "action", "key": "Return", "label": "↵", "width": 1.5, "accent": true }
-    ]}
+    {
+      "keys": [
+        {
+          "text": "1"
+        },
+        {
+          "text": "2"
+        },
+        {
+          "text": "3"
+        },
+        {
+          "text": "4"
+        },
+        {
+          "text": "5"
+        },
+        {
+          "text": "6"
+        },
+        {
+          "text": "7"
+        },
+        {
+          "text": "8"
+        },
+        {
+          "text": "9"
+        },
+        {
+          "text": "0"
+        }
+      ]
+    },
+    {
+      "keys": [
+        {
+          "text": "@"
+        },
+        {
+          "text": "#"
+        },
+        {
+          "text": "$"
+        },
+        {
+          "text": "_"
+        },
+        {
+          "text": "&"
+        },
+        {
+          "text": "-"
+        },
+        {
+          "text": "+"
+        },
+        {
+          "text": "("
+        },
+        {
+          "text": ")"
+        },
+        {
+          "text": "/"
+        }
+      ]
+    },
+    {
+      "keys": [
+        {
+          "type": "layout",
+          "layout": "symbols-extended",
+          "label": "=\\<",
+          "width": 1.5
+        },
+        {
+          "text": "*"
+        },
+        {
+          "text": "\""
+        },
+        {
+          "text": "'"
+        },
+        {
+          "text": ":"
+        },
+        {
+          "text": ";"
+        },
+        {
+          "text": "!"
+        },
+        {
+          "text": "?"
+        },
+        {
+          "type": "action",
+          "key": "BackSpace",
+          "label": "⌫",
+          "width": 1.5,
+          "repeats": true
+        }
+      ]
+    },
+    {
+      "keys": [
+        {
+          "type": "layout",
+          "layout": "letters",
+          "label": "abc",
+          "width": 1.5
+        },
+        {
+          "text": ","
+        },
+        {
+          "text": " ",
+          "label": "",
+          "width": 4,
+          "type": "space"
+        },
+        {
+          "text": "."
+        },
+        {
+          "type": "layout",
+          "layout": "terminal",
+          "label": "⌘",
+          "width": 1,
+          "glyph": "",
+          "font": "omarchy"
+        },
+        {
+          "type": "action",
+          "key": "Return",
+          "label": "↵",
+          "width": 1.5,
+          "accent": true
+        }
+      ]
+    }
   ]
 }
