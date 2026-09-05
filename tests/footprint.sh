@@ -48,6 +48,24 @@ sample() {
     "$(qt_clients)"
 }
 
+# Show/hide cycles and real keystrokes across several layouts, to fill whatever
+# caches are going to fill: glyph atlases for each layout's labels, scene graph
+# nodes, GL buffers.
+exercise() {
+  local pid=$1
+  for _ in 1 2 3 4 5 6; do
+    show true;  sleep 1
+    show false; sleep 1
+  done
+  show true; sleep 1
+  # Every layout, so each one's glyphs get rasterised at least once.
+  sudo python3 /tmp/tap.py --scale 2 --warmup 180,200 \
+    18,457 90,457 162,457 234,457 306,457 \
+    18,532 90,532 162,532 \
+    27,682 >/dev/null 2>&1
+  sleep 2
+}
+
 show() { busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b "$1" >/dev/null 2>&1; }
 
 run() {
@@ -71,9 +89,20 @@ run() {
 
   show false; sleep 3;  sample "$pid" "$label  cold, hidden"
   show true;  sleep 3;  sample "$pid" "$label  cold, shown"
-  sleep 50
-  show false; sleep 3;  sample "$pid" "$label  warm, hidden"
-  show true;  sleep 3;  sample "$pid" "$label  warm, shown"
+
+  # Then USE it, because the hypothesis under test is that the spread is caches
+  # filling rather than a real difference. quickshell measures 315 MB right
+  # after a restart and 351 MB after a session of use -- same process, same
+  # code, a 36 MB spread that looks a great deal like the 33 MB spread between
+  # this keyboard's two contradictory readings. If that is what this is, neither
+  # endpoint is the answer and the plateau is.
+  exercise "$pid"
+
+  show false; sleep 3;  sample "$pid" "$label  after use, hidden"
+  show true;  sleep 3;  sample "$pid" "$label  after use, shown"
+
+  sleep 120
+  show true;  sleep 3;  sample "$pid" "$label  plateau (+2 min idle), shown"
   echo
 }
 
