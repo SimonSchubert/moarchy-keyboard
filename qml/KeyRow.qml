@@ -27,6 +27,14 @@ Item {
         return total
     }
 
+    function clearPressed() {
+        for (var i = 0; i < strip.children.length; ++i) {
+            var cap = strip.children[i] as KeyCap
+            if (cap)
+                cap.pressed = false
+        }
+    }
+
     function keyAt(x, y) {
         if (strip.width <= 0)
             return null

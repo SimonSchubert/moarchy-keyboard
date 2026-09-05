@@ -156,6 +156,31 @@ Item {
 
     AlternatesPopup { id: popup }
 
+    // Clears any key left looking pressed.
+    //
+    // A key lights on touch-down and unlights on release, so a release that
+    // never arrives -- the compositor taking the grab away, the surface being
+    // hidden mid-press, a synthetic touch whose lift is lost -- leaves it lit
+    // for ever. It was the space bar, stuck accent-coloured with nothing
+    // touching it, and it survives every subsequent press because nothing else
+    // ever writes false to that key.
+    function clearPressed() {
+        for (var r = 0; r < rows.length; ++r) {
+            var row = rowRepeater.itemAt(r) as KeyRow
+            if (row)
+                row.clearPressed()
+        }
+        tracked = ({})
+        longPressTimer.stop()
+        repeatDelay.stop()
+        repeatTimer.stop()
+        popup.alternates = []
+    }
+
+    // Whenever the keyboard comes back, start from a clean slate rather than
+    // from whatever the last interaction left behind.
+    onVisibleChanged: if (visible) clearPressed()
+
     // -- hit testing -------------------------------------------------------
     function keyAt(x, y) {
         if (rows.length === 0)
@@ -374,16 +399,9 @@ Item {
         }
 
         onCanceled: function (points) {
-            for (var i = 0; i < points.length; ++i) {
-                var entry = keyboard.tracked[points[i].pointId]
-                if (entry && entry.cap)
-                    entry.cap.pressed = false
-                delete keyboard.tracked[points[i].pointId]
-            }
-            popup.alternates = []
-            longPressTimer.stop()
-            repeatDelay.stop()
-            repeatTimer.stop()
+            // Everything, not just the cancelled points: a cancel means the
+            // grab is gone, so no release is coming for any of them.
+            keyboard.clearPressed()
         }
     }
 

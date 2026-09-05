@@ -12,6 +12,15 @@ Rectangle {
 
     color: Colors.panelBackground
 
+    // Omarchy's icon font, loaded once here rather than per key. Its family
+    // name is read from the loader rather than assumed to be "omarchy", so a
+    // renamed font still works, and an empty string when it did not load lets
+    // each key fall back to a text label instead of a missing-glyph box.
+    FontLoader {
+        id: iconFont
+        source: Layouts.iconFontUrl
+    }
+
     // A hairline against the app above, so the keyboard reads as a separate
     // surface even when its background matches the window behind it.
     Rectangle {
@@ -22,37 +31,17 @@ Rectangle {
         color: Colors.separator
     }
 
-    // The left band belongs to mobileomarchy's back-edge gesture, and the
-    // panel's input region excludes it (see kDefaultBackEdgeInset in
-    // src/panel.cpp). The keys are inset by the same amount so that none of
-    // them sits in a band where touches are deliberately ignored -- a key that
-    // looks 36px wide and responds across 20 is worse than a narrower key that
-    // works everywhere it looks like it should.
+    // Edge to edge, no side margins.
     //
-    // 20 rather than 16 because mobileomarchy declares the band as
-    // Style.space(16), and Style.space rounds a scaled value -- about 18 at the
-    // default scale. Must match kDefaultBackEdgeInset in src/panel.cpp.
-    readonly property int backEdgeInset: 20
-
-    // Loaded once here rather than per key. Its family name is whatever the
-    // font declares -- read from the loader rather than assumed to be
-    // "omarchy", so a renamed font still works.
-    FontLoader {
-        id: iconFont
-        source: Layouts.iconFontUrl
-    }
-
+    // An earlier version inset the left by 20px to leave mobileomarchy's
+    // back-edge gesture its band, then matched it on the right so the asymmetry
+    // did not read as a bug. Both were wrong: it gave up 40px of a 360px screen
+    // so that a gesture could operate on top of a keyboard, and while the
+    // keyboard is up the left edge should type. The back gesture is still
+    // available across the whole app area above it.
     Keyboard {
-        iconFamily: iconFont.status === FontLoader.Ready ? iconFont.font.family : ""
         anchors.fill: parent
         anchors.topMargin: 1
-
-        // Matched on both sides. The left margin is load-bearing and the right
-        // one is not, but a keyboard indented on one side only reads as a bug
-        // rather than as padding -- which is exactly how it was reported. The
-        // right band still takes touches: rows clamp a tap into the nearest key,
-        // so the margin is dead space to look at and live space to hit.
-        anchors.leftMargin: root.backEdgeInset
-        anchors.rightMargin: root.backEdgeInset
+        iconFamily: iconFont.status === FontLoader.Ready ? iconFont.font.family : ""
     }
 }

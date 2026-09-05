@@ -72,7 +72,7 @@ constexpr int kDefaultBottomMargin = 0;
 // So the default is deliberately generous rather than exact, and settable with
 // --back-edge-inset for a theme that scales further. A couple of pixels of key
 // width is a cheap price for never having a dead stripe.
-constexpr int kDefaultBackEdgeInset = 20;
+constexpr int kDefaultBackEdgeInset = 0;
 
 // The input region for a retracted keyboard: one pixel, in the corner.
 //
@@ -135,19 +135,31 @@ bool Panel::prepare(QString *error)
         return false;
     }
 
-    // Overlay, not Top.
+    // Top, not Overlay -- and the reason is the gesture strip, not this
+    // keyboard.
     //
-    // sway renders a fullscreen window ABOVE the Top layer, so on Top this
-    // keyboard is invisible behind any fullscreen app -- and mobileomarchy
-    // fullscreens things routinely (every TUI launched through
-    // mobileomarchy-launch-tui, for one). The failure is total: a text field in
-    // a fullscreen app gets a keyboard that is mapped, has an exclusive zone,
-    // reports itself visible on D-Bus, and cannot be seen or touched.
+    // Exclusive zones resolve layer by layer, Overlay downwards. The strip is
+    // an Overlay surface, so from Top it is resolved FIRST and keeps the screen
+    // edge for free, with no dependence on map order. That is how squeekboard
+    // behaved and why the home pill was always at the bottom before this
+    // keyboard existed.
     //
-    // Found by accident -- a fullscreen test probe hid the keyboard and the
-    // symptom looked like a keyboard bug, which it was, just not the one being
-    // tested.
-    layerShell->setLayer(LayerShellQt::Window::LayerOverlay);
+    // Moving to Overlay put both surfaces in one layer, where the order is map
+    // order, and the guarantee evaporated: this keyboard took the edge and
+    // stranded the pill at 497..520 between the app and the keys. No geometry
+    // fixes that -- a bottom margin moves the surface but not the reservation,
+    // so the strip still lands above and the margin shows as wallpaper. It was
+    // tried; that is what it looked like.
+    //
+    // The cost, and it is a real one: sway renders a fullscreen window above
+    // Top, so a text field in a fullscreen app gets a keyboard that is mapped,
+    // reserves space, reports itself visible on D-Bus, and cannot be seen. That
+    // was equally true of squeekboard, so it is a pre-existing limitation
+    // rather than a regression -- but it is worth fixing properly one day, by
+    // switching to Overlay only while a fullscreen window is focused
+    // (zwlr_layer_surface_v1.set_layer since version 2 allows it without
+    // remapping).
+    layerShell->setLayer(LayerShellQt::Window::LayerTop);
     layerShell->setAnchors(LayerShellQt::Window::Anchors(
         LayerShellQt::Window::AnchorLeft | LayerShellQt::Window::AnchorRight
         | LayerShellQt::Window::AnchorBottom));
@@ -223,13 +235,18 @@ void Panel::applyVisibility()
         return;
 
     LayerShellQt::Window *layerShell = LayerShellQt::Window::get(m_view);
-    // The zone has to cover the margin too, or the app under the keyboard is
-    // resized to the wrong height and the last row sits over its content.
+    // The zone is the panel height ALONE, not height plus margin. wlroots adds
+    // the anchored edge's margin to the exclusive zone itself, so adding it
+    // here too reserves it twice -- which is what an earlier attempt did (24
+    // margin, 224 zone, 248 reserved) and why it produced a band of wallpaper
+    // under the keys instead of a strip.
     if (layerShell)
-        layerShell->setExclusiveZone(m_shown ? m_panelHeight + m_bottomMargin : 0);
+        layerShell->setExclusiveZone(m_shown ? m_panelHeight : 0);
 
-    // Everything except the back-edge band. Not the whole surface: see
-    // kBackEdgeInset.
+    // The whole surface when shown. The back-edge band used to be excluded
+    // here so the gesture could work over the keyboard; it cost 20px of key
+    // width on a 360px screen for a gesture that should not be operating on top
+    // of a keyboard in the first place. --back-edge-inset can put it back.
     m_view->setMask(m_shown ? QRegion(m_backEdgeInset, 0,
                                       m_view->width() - m_backEdgeInset,
                                       m_view->height())
