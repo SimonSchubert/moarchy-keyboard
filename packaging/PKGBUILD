@@ -1,0 +1,53 @@
+# Build with:  cd packaging && makepkg -f
+#
+# Builds from the working tree above this file rather than fetching a tarball,
+# so an uncommitted change can be packaged and installed on the phone without
+# a release. Swap source=() for a git+https line once this has a repo.
+#
+# TODO: license. Set to 'custom' until moarchy-keyboard has a LICENSE file --
+# guessing a licence for someone else's project is not mine to do.
+
+pkgname=moarchy-keyboard
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Themed on-screen keyboard for mobileomarchy (Qt6/QML, input-method-v2)"
+arch=('aarch64')
+url="https://github.com/simonschubert/moarchy-keyboard"
+license=('custom')
+
+depends=(
+  'qt6-base'
+  'qt6-declarative'
+  'qt6-wayland'
+  'layer-shell-qt'
+  'wayland'
+  'libxkbcommon'
+)
+# wayland-scanner ships in the `wayland` package. wlr-protocols is deliberately
+# NOT a dependency: it does not contain input-method-unstable-v2 or
+# virtual-keyboard-unstable-v1 (only the wlr-* protocols), and no Arch package
+# does, so both XML files are vendored in protocols/.
+makedepends=('cmake' 'ninja' 'pkgconf')
+
+# squeekboard and this cannot both run: zwp_input_method_manager_v2 grants one
+# input method per seat, and the loser exits. Declaring the conflict makes that
+# a pacman error at install time instead of a keyboard that silently never
+# appears -- which is the exact failure mode this project exists to stop
+# repeating.
+conflicts=('squeekboard')
+
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/.."
+  cmake -S . -B build-pkg -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build build-pkg
+}
+
+package() {
+  cd "$startdir/.."
+  DESTDIR="$pkgdir" cmake --install build-pkg
+}

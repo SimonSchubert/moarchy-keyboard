@@ -1,0 +1,26 @@
+# Compile-and-package environment for moarchy-keyboard.
+#
+# On Apple Silicon this runs NATIVELY (linux/arm64), so a full build takes
+# seconds instead of the several minutes the PinePhone's 4x Cortex-A53 needs --
+# and it links against the exact Arch Linux ARM Qt the phone runs, so a build
+# that succeeds here is a build that runs there.
+#
+#   docker build --platform linux/arm64 -f docker/Dockerfile.build -t moarchy-keyboard-build .
+#   docker run --rm -v "$PWD:/src" -w /src moarchy-keyboard-build ./scripts/build.sh
+FROM --platform=linux/arm64 menci/archlinuxarm:base-devel
+
+# Docker Desktop's Linux VM kernel does not expose Landlock, which pacman 7 uses
+# to sandbox downloads. Same fix as mobileomarchy's own builder image.
+RUN sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+
+RUN pacman-key --init && pacman-key --populate archlinuxarm && \
+    pacman -Syu --noconfirm --needed \
+      base-devel cmake ninja pkgconf git \
+      qt6-base qt6-declarative qt6-wayland \
+      layer-shell-qt extra-cmake-modules \
+      wayland wayland-protocols wlr-protocols libxkbcommon && \
+    pacman -Scc --noconfirm
+
+RUN useradd -m builder && echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+USER builder
+WORKDIR /src

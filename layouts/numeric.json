@@ -1,0 +1,22 @@
+{
+  "name": "numeric",
+  "label": "123",
+  "comment": "Auto-selected for digits, number, phone and PIN content purposes.",
+  "rows": [
+    { "keys": [
+      { "text": "1" }, { "text": "2" }, { "text": "3" },
+      { "type": "action", "key": "BackSpace", "label": "⌫", "repeats": true }
+    ]},
+    { "keys": [
+      { "text": "4" }, { "text": "5" }, { "text": "6" }, { "text": "-" }
+    ]},
+    { "keys": [
+      { "text": "7" }, { "text": "8" }, { "text": "9" }, { "text": "," }
+    ]},
+    { "keys": [
+      { "type": "layout", "layout": "letters", "label": "abc" },
+      { "text": "0" }, { "text": "." },
+      { "type": "action", "key": "Return", "label": "↵", "accent": true }
+    ]}
+  ]
+}

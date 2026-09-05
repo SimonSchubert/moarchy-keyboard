@@ -99,13 +99,27 @@ One process, three layers.
   └──────────────────────────────────────────────────────────┘
 ```
 
-**Wayland access.** `QGuiApplication` (not `QApplication` — no QtWidgets),
-`wl_display` and `wl_seat` from
-`qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>()`, then a
-`wl_registry` listener to bind the two managers. Protocol glue generated at build
-time by `wayland-scanner` from the `wlr-protocols` package
-(`input-method-unstable-v2.xml`, `virtual-keyboard-unstable-v1.xml`) — neither is
-in upstream `wayland-protocols`, which ships only input-method **v1**.
+**Wayland access.** `QGuiApplication` (not `QApplication` — no QtWidgets), on a
+**second Wayland connection of its own** rather than Qt's. Qt's would work —
+`QNativeInterface::QWaylandApplication` hands out its `wl_display` and `wl_seat`
+— but objects created there land on the default event queue, which Qt's platform
+plugin reads on its own event thread through machinery that is internal and has
+changed between minor releases. The failure mode when that shifts is an input
+method that silently stops receiving `activate`, and this project has met that
+class of bug too often. Two connections from one process is ordinary Wayland;
+nothing crosses between them. (See `src/waylandconnection.h`. It is only sound
+because the alternates popup is drawn in-panel rather than through
+`get_input_popup_surface`, which would need a `wl_surface` from this connection.)
+
+Protocol glue is generated at build time by `wayland-scanner` from **vendored**
+XML in `protocols/`. Corrected from an earlier draft of this spec, which claimed
+the `wlr-protocols` package supplies them: it does not. That package holds only
+the `wlr-*` prefixed protocols, and no Arch package ships
+`input-method-unstable-v2.xml` or `virtual-keyboard-unstable-v1.xml` at all —
+they live in the wlroots source tree. `/usr/share/wayland-protocols` has
+input-method **v1**, an unrelated protocol Sway does not advertise. squeekboard
+and wvkbd vendor the same two files for the same reason.
+`scripts/update-protocols.sh` refreshes them.
 
 **Panel.** `LayerShellQt` (`extra/layer-shell-qt` 6.7.4, aarch64) for the layer
 surface. Anchored left+right+bottom, layer `Top`, and — load-bearing —
@@ -252,8 +266,9 @@ Each is a claim that can be shown true or false on the phone.
     (`docker/build-packages.sh`) and installs as a pacman package, as walker and
     elephant already do.
 41. Depends only on what the phone already has or can get from `extra`:
-    `qt6-base`, `qt6-declarative`, `qt6-wayland`, `layer-shell-qt`,
-    `wlr-protocols` (build), `wayland`, `libxkbcommon`.
+    `qt6-base`, `qt6-declarative`, `qt6-wayland`, `layer-shell-qt`, `wayland`
+    (which also supplies `wayland-scanner`), `libxkbcommon`. **Not**
+    `wlr-protocols` — it does not contain these protocols; see §3.
 42. mobileomarchy's change is **one line** in `default/sway/autostart.conf`
     (`exec squeekboard` → `exec moarchy-keyboard`), plus removing `squeekboard`
     and `libbsd` from `mobileomarchy-base.packages`.

@@ -1,0 +1,29 @@
+{
+  "name": "symbols-extended",
+  "label": "=\\<",
+  "rows": [
+    { "keys": [
+      { "text": "~" }, { "text": "`" }, { "text": "|" }, { "text": "\\" }, { "text": "^" },
+      { "text": "{" }, { "text": "}" }, { "text": "[" }, { "text": "]" }, { "text": "=" }
+    ]},
+    { "keys": [
+      { "text": "<" }, { "text": ">" }, { "text": "°" }, { "text": "£" },
+      { "text": "€" }, { "text": "¥" }, { "text": "©" }, { "text": "®" },
+      { "text": "±" }, { "text": "·" }
+    ]},
+    { "keys": [
+      { "type": "layout", "layout": "symbols", "label": "?123", "width": 1.5 },
+      { "text": "§" }, { "text": "¶" }, { "text": "•" }, { "text": "–" },
+      { "text": "—" }, { "text": "«" }, { "text": "»" },
+      { "type": "action", "key": "BackSpace", "label": "⌫", "width": 1.5, "repeats": true }
+    ]},
+    { "keys": [
+      { "type": "layout", "layout": "letters", "label": "abc", "width": 1.5 },
+      { "text": "¿" },
+      { "text": " ", "label": "", "width": 4, "type": "space" },
+      { "text": "¡" },
+      { "type": "layout", "layout": "terminal", "label": "⌘", "width": 1 },
+      { "type": "action", "key": "Return", "label": "↵", "width": 1.5, "accent": true }
+    ]}
+  ]
+}

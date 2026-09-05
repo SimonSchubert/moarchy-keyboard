@@ -1,0 +1,40 @@
+{
+  "name": "terminal",
+  "label": "⌘",
+  "comment": "The layout squeekboard had and wvkbd did not. Esc, Tab, Ctrl, Alt and arrows are what make a shell usable with no hardware keyboard; every one of them goes out as a keycode, never as text.",
+  "rows": [
+    { "keys": [
+      { "type": "action", "key": "Escape", "label": "esc" },
+      { "type": "action", "key": "Tab", "label": "tab" },
+      { "type": "modifier", "modifier": "ctrl", "label": "ctrl" },
+      { "type": "modifier", "modifier": "alt", "label": "alt" },
+      { "text": "|" }, { "text": "/" }, { "text": "~" },
+      { "type": "action", "key": "Up", "label": "↑" },
+      { "type": "action", "key": "Delete", "label": "del" }
+    ]},
+    { "keys": [
+      { "text": "q" }, { "text": "w" }, { "text": "e" }, { "text": "r" }, { "text": "t" },
+      { "text": "y" }, { "text": "u" }, { "text": "i" }, { "text": "o" }, { "text": "p" }
+    ]},
+    { "keys": [
+      { "text": "a" }, { "text": "s" }, { "text": "d" }, { "text": "f" }, { "text": "g" },
+      { "text": "h" }, { "text": "j" }, { "text": "k" }, { "text": "l" },
+      { "type": "action", "key": "Return", "label": "↵", "accent": true }
+    ]},
+    { "keys": [
+      { "type": "modifier", "modifier": "shift", "label": "⇧", "width": 1.5 },
+      { "text": "z" }, { "text": "x" }, { "text": "c" }, { "text": "v" }, { "text": "b" },
+      { "text": "n" }, { "text": "m" },
+      { "type": "action", "key": "BackSpace", "label": "⌫", "width": 1.5, "repeats": true }
+    ]},
+    { "keys": [
+      { "type": "layout", "layout": "letters", "label": "abc", "width": 1.5 },
+      { "text": "-" },
+      { "text": " ", "label": "", "width": 3, "type": "space" },
+      { "type": "action", "key": "Left", "label": "←" },
+      { "type": "action", "key": "Down", "label": "↓" },
+      { "type": "action", "key": "Right", "label": "→" },
+      { "type": "layout", "layout": "symbols", "label": "?123", "width": 1.5 }
+    ]}
+  ]
+}
