@@ -100,6 +100,7 @@ qt_add_qml_module(moarchy-keyboard
     qml/KeyRow.qml
     qml/KeyCap.qml
     qml/AlternatesPopup.qml
+    qml/RestoreHandle.qml
   RESOURCE_PREFIX /
 )
 

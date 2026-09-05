@@ -1,7 +1,10 @@
 #pragma once
 
 #include <QObject>
+#include <QQmlEngine>
 #include <QQuickView>
+#include <QRect>
+#include <type_traits>
 
 // The keyboard's one layer surface.
 //
@@ -24,9 +27,34 @@
 class Panel : public QObject
 {
     Q_OBJECT
+    QML_NAMED_ELEMENT(Panel)
+    QML_SINGLETON
+
 
 public:
-    explicit Panel(QObject *parent = nullptr);
+    enum Mode {
+        Hidden,   // nothing drawn, nothing takes touch, no space reserved
+        Handle,   // only the restore handle: the keyboard was dismissed by hand
+                  // while a text field is still focused, and the platform emits
+                  // nothing when that field is tapped again -- so there has to
+                  // be something on screen to tap
+        Shown,    // the keyboard
+    };
+    Q_ENUM(Mode)
+
+    static void setInstance(Panel *instance) { s_instance = instance; }
+    static Panel *create(QQmlEngine *, QJSEngine *) {
+        if (!s_instance) {
+            qCritical("Panel singleton used before main() set the instance");
+            return nullptr;
+        }
+        QQmlEngine::setObjectOwnership(s_instance, QQmlEngine::CppOwnership);
+        return s_instance;
+    }
+
+    // No default argument, so the QML engine cannot default-construct its own
+    // instance instead of calling create(). See the static_assert below.
+    explicit Panel(QObject *parent);
 
     // Split in two on purpose. QML is evaluated by setSource(), so every
     // context property it reads has to be in place before then -- setting them
@@ -38,7 +66,21 @@ public:
     bool prepare(QString *error);
     bool load(const QUrl &source, QString *error);
 
-    bool isShown() const { return m_shown; }
+    // Declared here rather than beside Q_OBJECT: the property type has to be a
+    // name the compiler already knows, and Mode is declared just above.
+    Q_PROPERTY(Mode mode READ mode NOTIFY modeChanged)
+
+    Mode mode() const { return m_mode; }
+    bool isShown() const { return m_mode == Shown; }
+
+    // Where QML has put the handle, in panel coordinates. Reported back so the
+    // input region can be exactly that rectangle -- the rest of the surface has
+    // to stay transparent to touch, or a dismissed keyboard becomes an
+    // invisible wall across the bottom of the app.
+    Q_INVOKABLE void setHandleRect(int x, int y, int width, int height);
+
+    // The handle was tapped.
+    Q_INVOKABLE void requestShow();
 
     // Width of the left band reserved for mobileomarchy's back-edge gesture,
     // excluded from this keyboard's input region and inset from its keys.
@@ -55,15 +97,29 @@ public:
     QQuickView *view() const { return m_view; }
 
 public Q_SLOTS:
-    void setShown(bool shown);
+    void setMode(Mode mode);
+    void setShown(bool shown) { setMode(shown ? Shown : Hidden); }
+
+Q_SIGNALS:
+    void modeChanged();
+    void showRequested();
 
 private:
     void applyVisibility();
 
     QQuickView *m_view = nullptr;
-    bool m_shown = false;
+    Mode m_mode = Hidden;
     bool m_mapped = false;
+    QRect m_handleRect;
     int m_backEdgeInset = -1;   // -1 until prepare() applies the default
     int m_bottomMargin = -1;
     int m_panelHeight = -1;
+    inline static Panel *s_instance = nullptr;
 };
+
+// Same invariant as Theme and LayoutStore: a default-constructible QML_SINGLETON
+// is built by the engine instead of by create(), and QML then holds a different
+// object from the one main() configured.
+static_assert(!std::is_default_constructible_v<Panel>,
+              "Panel must not be default-constructible: the QML engine would "
+              "build its own instance instead of calling create().");

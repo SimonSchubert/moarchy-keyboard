@@ -102,6 +102,15 @@ public:
     static double contrastOf(const QColor &a, const QColor &b) { return contrastRatio(a, b); }
     static QColor composite(const QColor &foreground, const QColor &background, double alpha);
 
+    // Mix two opaque colours. Exposed to QML because the shell's Util.alpha
+    // idiom is not available here -- this is a separate process with its own
+    // QML module -- and because a border wants a colour derived from the theme
+    // rather than a hardcoded one that survives exactly one palette.
+    Q_INVOKABLE QColor blend(const QColor &a, const QColor &b, double t) const
+    {
+        return composite(a, b, t);
+    }
+
     // The palette exactly as colors.toml declared it, before any of this
     // class's role mapping. Lets --check-themes measure an arbitrary pair of
     // theme roles, which is what anything else drawing on an Omarchy surface

@@ -436,7 +436,7 @@ int main(int argc, char *argv[])
     }
 
     // --- Panel --------------------------------------------------------------
-    Panel panel;
+    Panel panel(nullptr);
 
     // Visibility has two inputs: what the compositor says about text focus, and
     // what someone asked for over D-Bus. A manual request -- the back gesture,
@@ -470,7 +470,17 @@ int main(int argc, char *argv[])
 
     auto applyVisibility = [&] {
         const bool wanted = manualOverride ? manualWanted : inputMethod.isActive();
-        panel.setShown(wanted);
+
+        // Three states, not two. A keyboard dismissed by hand while a text
+        // field is still focused leaves the user with nothing to tap: the
+        // platform sends no event when an already-focused field is tapped
+        // again, so there is nothing to wake up on. That case -- and only that
+        // case -- shows a small handle instead of nothing at all.
+        const Panel::Mode mode = wanted            ? Panel::Shown
+                               : inputMethod.isActive() && manualOverride
+                                                   ? Panel::Handle
+                                                   : Panel::Hidden;
+        panel.setMode(mode);
         osk.setVisible(wanted);
     };
 
@@ -491,6 +501,14 @@ int main(int argc, char *argv[])
 
     QObject::connect(&inputMethod, &InputMethod::activated, &app,
                      [&] { clearOverride("activate"); });
+
+    // The handle was tapped. This is the deliberate way back, so it clears the
+    // override outright rather than going through the grace period.
+    QObject::connect(&panel, &Panel::showRequested, &app, [&] {
+        qCInfo(lcMain) << "restore handle tapped";
+        manualOverride = false;
+        applyVisibility();
+    });
     QObject::connect(&inputMethod, &InputMethod::stateApplied, &app,
                      [&] { clearOverride("text-input state update"); });
 
@@ -541,6 +559,7 @@ int main(int argc, char *argv[])
     KeyRouter::setInstance(&router);
     Theme::setInstance(&theme);
     LayoutStore::setInstance(&layouts);
+    Panel::setInstance(&panel);
 
     if (!panel.load(QUrl(QStringLiteral("qrc:/moarchy/qml/Main.qml")), &error))
         return fail(QStringLiteral("cannot load the keyboard QML"), error);

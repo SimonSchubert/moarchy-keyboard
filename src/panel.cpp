@@ -211,22 +211,39 @@ bool Panel::load(const QUrl &source, QString *error)
     return true;
 }
 
-void Panel::setShown(bool shown)
+void Panel::setMode(Mode mode)
 {
-    if (m_shown == shown)
+    if (m_mode == mode)
         return;
-    m_shown = shown;
+    m_mode = mode;
 
-    // First show maps the surface. Every later one only changes the input
-    // region, the exclusive zone and the root item's visibility -- the surface
-    // itself is never unmapped again.
-    if (m_shown && !m_mapped) {
+    // First appearance of any kind maps the surface. Every later change only
+    // adjusts the input region, the exclusive zone and what QML draws -- the
+    // surface itself is never unmapped again.
+    if (m_mode != Hidden && !m_mapped) {
         m_mapped = true;
         m_view->show();
         qCInfo(lcPanel) << "layer surface up:" << m_view->width() << "x" << m_panelHeight;
     }
 
     applyVisibility();
+    Q_EMIT modeChanged();
+}
+
+void Panel::setHandleRect(int x, int y, int width, int height)
+{
+    const QRect rect(x, y, width, height);
+    if (rect == m_handleRect)
+        return;
+    m_handleRect = rect;
+    qCDebug(lcPanel) << "handle rect ->" << rect;
+    if (m_mode == Handle)
+        applyVisibility();
+}
+
+void Panel::requestShow()
+{
+    Q_EMIT showRequested();
 }
 
 void Panel::applyVisibility()
@@ -235,32 +252,41 @@ void Panel::applyVisibility()
         return;
 
     LayerShellQt::Window *layerShell = LayerShellQt::Window::get(m_view);
-    // The zone is the panel height ALONE, not height plus margin. wlroots adds
-    // the anchored edge's margin to the exclusive zone itself, so adding it
-    // here too reserves it twice -- which is what an earlier attempt did (24
-    // margin, 224 zone, 248 reserved) and why it produced a band of wallpaper
-    // under the keys instead of a strip.
+    // Only the full keyboard reserves space. The handle floats over the app --
+    // it is a few dozen pixels and resizing every window for it would be worse
+    // than the problem it solves.
     if (layerShell)
-        layerShell->setExclusiveZone(m_shown ? m_panelHeight : 0);
+        layerShell->setExclusiveZone(m_mode == Shown ? m_panelHeight : 0);
 
-    // The whole surface when shown. The back-edge band used to be excluded
-    // here so the gesture could work over the keyboard; it cost 20px of key
-    // width on a 360px screen for a gesture that should not be operating on top
-    // of a keyboard in the first place. --back-edge-inset can put it back.
-    m_view->setMask(m_shown ? QRegion(m_backEdgeInset, 0,
-                                      m_view->width() - m_backEdgeInset,
-                                      m_view->height())
-                            : noInputRegion());
+    // The input region follows the mode exactly. In Handle mode it is the
+    // handle and nothing else: the rest of the surface is still mapped and
+    // still transparent, and if it took touches it would be an invisible wall
+    // across the bottom of whatever is underneath.
+    switch (m_mode) {
+    case Shown:
+        m_view->setMask(QRegion(m_backEdgeInset, 0,
+                                m_view->width() - m_backEdgeInset,
+                                m_view->height()));
+        break;
+    case Handle:
+        m_view->setMask(m_handleRect.isValid() ? QRegion(m_handleRect)
+                                               : noInputRegion());
+        break;
+    case Hidden:
+        m_view->setMask(noInputRegion());
+        break;
+    }
 
     QQuickItem *root = m_view->rootObject();
     if (root)
-        root->setVisible(m_shown);
+        root->setVisible(m_mode != Hidden);
 
     // Logged because "the panel says it is shown and the screen says it is
     // black" needs the intermediate facts to be separable: whether the root
     // item exists, whether it is visible, and whether it has a size. A root
     // with zero width paints nothing while every flag above it reads correct.
-    qCInfo(lcPanel) << "visibility ->" << (m_shown ? "shown" : "hidden")
+    qCInfo(lcPanel) << "visibility ->"
+                    << (m_mode == Shown ? "shown" : m_mode == Handle ? "handle" : "hidden")
                     << "root" << (root ? "yes" : "MISSING")
                     << "rootVisible" << (root && root->isVisible())
                     << "rootSize" << (root ? root->width() : -1)

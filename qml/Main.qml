@@ -1,16 +1,18 @@
 import QtQuick
 import moarchy
 
-// The panel's root. Deliberately thin: everything interesting is in Keyboard.qml.
+// The panel's root.
 //
-// `visible` is driven from C++ (Panel::applyVisibility) rather than bound here.
-// Retracting the keyboard must not destroy the layer surface, so the surface
-// stays mapped and this item stops drawing instead -- see the comment at the top
-// of src/panel.h for why that distinction is the whole ballgame.
-Rectangle {
+// One surface serves three states -- the keyboard, the restore handle, and
+// nothing -- because the surface must never be unmapped once created (see the
+// note at the top of src/panel.h). So the root is a transparent Item and each
+// state paints its own background, rather than the root painting one that would
+// show through in the states that want nothing.
+Item {
     id: root
 
-    color: Colors.panelBackground
+    readonly property bool showingKeyboard: Panel.mode === Panel.Shown
+    readonly property bool showingHandle: Panel.mode === Panel.Handle
 
     // Omarchy's icon font, loaded once here rather than per key. Its family
     // name is read from the loader rather than assumed to be "omarchy", so a
@@ -21,27 +23,54 @@ Rectangle {
         source: Layouts.iconFontUrl
     }
 
-    // A hairline against the app above, so the keyboard reads as a separate
-    // surface even when its background matches the window behind it.
+    // ------------------------------------------------------------- keyboard
     Rectangle {
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: 1
-        color: Colors.separator
+        anchors.fill: parent
+        visible: root.showingKeyboard
+        color: Colors.panelBackground
+
+        // A hairline against the app above, so the keyboard reads as a separate
+        // surface even when its background matches the window behind it.
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 1
+            color: Colors.separator
+        }
+
+        // Edge to edge, no side margins. An earlier version inset both sides to
+        // leave the back-edge gesture its band, which gave up 40px of a 360px
+        // screen so a gesture could operate on top of a keyboard.
+        Keyboard {
+            anchors.fill: parent
+            anchors.topMargin: 1
+            iconFamily: iconFont.status === FontLoader.Ready ? iconFont.font.family : ""
+        }
     }
 
-    // Edge to edge, no side margins.
-    //
-    // An earlier version inset the left by 20px to leave mobileomarchy's
-    // back-edge gesture its band, then matched it on the right so the asymmetry
-    // did not read as a bug. Both were wrong: it gave up 40px of a 360px screen
-    // so that a gesture could operate on top of a keyboard, and while the
-    // keyboard is up the left edge should type. The back gesture is still
-    // available across the whole app area above it.
-    Keyboard {
-        anchors.fill: parent
-        anchors.topMargin: 1
-        iconFamily: iconFont.status === FontLoader.Ready ? iconFont.font.family : ""
+    // --------------------------------------------------------------- handle
+    RestoreHandle {
+        id: handle
+        visible: root.showingHandle
+
+        // Bottom right, clear of both gesture bands: the strip already has the
+        // band below this surface, and the back edge owns the left.
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 12
+        anchors.bottomMargin: 10
+
+        // The input region is set from this, so that the rest of the surface --
+        // still mapped, still transparent -- does not swallow touches meant for
+        // the app underneath.
+        function report() {
+            Panel.setHandleRect(x, y, width, height)
+        }
+        onXChanged: report()
+        onYChanged: report()
+        onWidthChanged: report()
+        onHeightChanged: report()
+        Component.onCompleted: report()
     }
 }
