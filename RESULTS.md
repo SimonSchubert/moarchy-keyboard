@@ -10,8 +10,8 @@ it; everything unproven says so.
 
 | | count |
 |---|---|
-| Passed | 22 |
-| Failed | 1 |
+| Passed | 24 |
+| Failed | 2 |
 | Partial | 3 |
 | Not yet verified | 18 |
 
@@ -44,30 +44,50 @@ target, which was a number I picked without evidence — see below.
 | 39 | **GPU, not llvmpipe** | 3 fds on `/dev/dri/renderD128`, same as the shell. `libLLVM` is mapped, but that is libgallium's unconditional link, not a software fallback — the fd is the real test |
 | 40 | Builds as a pacman package | `makepkg` (no `--nodeps`) → `moarchy-keyboard-0.1.0-1-aarch64.pkg.tar.xz`, 87 K, binary + 5 layouts |
 | 25 | **WCAG AA in every theme** | All **22** Omarchy themes pass, worst 4.64:1. Swept offline with `--check-themes`; reproducible via `scripts/fetch-themes.sh` |
+| 7 | Refuses the seat rather than fighting for it | A second instance exited **1** with `another input method already holds this seat; exiting so two keyboards do not fight over it` |
+| 19 | User layout overrides the shipped one | A `letters.json` in `~/.config/moarchy-keyboard/layouts/` was the one loaded, per the log |
 | 41 | Dependencies available | The same `makepkg` run validated the `depends` array against an Arch ARM image holding only `qt6-base`, `qt6-declarative`, `qt6-wayland`, `layer-shell-qt`, `wayland`, `libxkbcommon` |
 
 ## Failed
 
-**AC 35 — incremental PSS ≤ 25 MB. Measured 48.8 MB.**
+**AC 36 — cold start ≤ 800 ms. Measured 1369 ms.** From process spawn to
+`layer surface up` in the log, polled at 50 ms. Real, and not close. Not yet
+investigated; the QML engine and a 34 KB generated keymap both happen at startup
+and neither has been timed separately.
 
-| | Pss | Rss |
-|---|---|---|
-| squeekboard 1.43.1 | 50 822 kB | 74 400 kB |
-| moarchy-keyboard | 48 779 kB | 86 444 kB |
+**AC 35 — incremental PSS ≤ 25 MB. Unresolved, and the target is probably wrong.**
 
-A 2 MB improvement, not the ≥50 % the target implied. The Qt sharing argument
-holds — with quickshell running, `libQt6Gui`/`Quick`/`Qml`/`Core` cost only
-~12.6 MB PSS between them — so the libraries are not where the memory goes. It
-is ~24 MB of anonymous memory: 16.7 MB unnamed plus 7 MB heap.
+Two measurements of the same binary, on the same device, disagree by 33 MB:
 
-I flagged 25 MB when writing the spec as the one number I had picked rather than
-derived ("clearly better than half"). The evidence says it was wrong. Before
-revising it, `tests/footprint.sh` attributes the anonymous memory across Qt Quick
-settings (texture atlas size, render loop, QML disk cache) — the 16.7 MB unnamed
-mapping is suspiciously close to a 2048×2048 RGBA texture atlas, which a keyboard
-with no images has no use for. **Not yet run.** If that is it, the target may
-still be reachable; if it is the QML engine's own floor, the AC should be revised
-to the truth rather than the hope.
+| when | Pss | Private_Dirty | Rss |
+|---|---|---|---|
+| first sample, after ~10 min of use | 48 779 kB | 24 276 kB | 86 444 kB |
+| second sample, 8 s after start | 81 486 kB | 43 876 kB | 136 136 kB |
+| squeekboard 1.43.1 (single sample) | 50 822 kB | 41 458 kB | 74 400 kB |
+
+So the honest answer is "I do not know yet", not either number. Both were single
+samples with nothing controlled, and on this phone at least three things move
+them without the program allocating anything:
+
+- **PSS is a share.** Every other Qt client running divides the shared Qt and
+  font pages further, so ours falls when someone starts a Qt app and rises when
+  they quit. A KDE app was running during the first sample and not the second.
+- **Caches fill.** quickshell measures 315 MB after a restart and 351 MB after a
+  session of use — same process, same code, purely icon and texture caches.
+- **Visibility.** Retracted, the root item is invisible and the scene graph has
+  nothing to draw.
+
+`tests/footprint.sh` was rewritten to control for all three: Qt client count
+recorded with every sample, cold and warm samples of the same process, hidden and
+shown measured separately, and squeekboard put through the identical procedure
+rather than compared against a figure captured under other conditions. Of the Qt
+Quick settings tried so far, only `QSG_TRANSIENT_IMAGES=1` moved the needle
+(−10 MB); the texture atlas size did nothing, which kills my guess that the
+unnamed mapping was a 2048×2048 atlas.
+
+Either way, 25 MB was the one number in the spec I picked rather than derived,
+and I do not expect it to survive. When the controlled run lands, the AC gets
+revised to the measurement — in RESULTS.md, not by quietly editing SPEC.md.
 
 ## Partial
 
@@ -130,6 +150,36 @@ hopeless still ends up where the old code started.
   assigned, so a latched Shift looked identical to an idle one. Now a one-shot
   latch draws as an outline and a lock as a fill, which are also distinct from
   each other.
+
+## The first full acceptance run tested the wrong program
+
+Recorded because it is the most instructive thing that happened.
+
+`tests/acceptance.sh` ran end to end and produced a page of confident results —
+including AC 11 as a **product failure**. It was measuring squeekboard.
+moarchy-keyboard had exited (something on this phone restores squeekboard, and
+one input method per seat means ours then starts, is told `unavailable`, and
+correctly exits), after which the suite went on tapping squeekboard's layout and
+screenshotting squeekboard's keys. The screenshot is unmistakable once you look:
+light Adwaita keys and squeekboard's own Tab/Ctrl/Alt/Shift row.
+
+A test that cannot tell which program it is testing is worse than no test,
+because it produces evidence. Every behavioural section now asserts that our PID
+owns `sm.puri.OSK0` before believing a keystroke or a screenshot, and skips
+rather than reporting a result it cannot stand behind.
+
+Two more harness bugs from the same run, both of which reported product failures
+that were the test's own:
+
+- **AC 11** tapped terminal-layout coordinates at the letters layout — five rows
+  of 60 against four rows of 75 — so the tap aimed at `q` landed on `a`.
+- **AC 2 (20-cycle)** cycled focus onto a window that run never created, so every
+  focus command failed silently, activates came out **0**, and "1 surface, 0
+  destroys" was true of a keyboard nothing had asked to do anything. It now fails
+  outright below five activates: a pass that cannot fail is not a pass.
+
+The 5-cycle AC 2 result higher up this page stands — it was run separately, with
+activates confirmed at 5.
 
 ## Notes for whoever runs these next
 
