@@ -280,6 +280,24 @@ Each is a claim that can be shown true or false on the phone.
     `install/config.sh`'s gating block can be deleted.
 44. `bin/mobileomarchy-selftest` gains a check that the keyboard owns
     `sm.puri.OSK0`.
+45. The panel's background runs under mobileomarchy's gesture strip, so no band
+    of wallpaper shows below the keys. The keys themselves do not move: the
+    surface is grown by `--gesture-strip-inset` and given a negative bottom
+    margin of the same size, and the key area is inset by it again. Measured on
+    a 720x1440 panel: the rows below the keys read the panel background to the
+    last physical row, where they read wallpaper before.
+46. Running under the strip costs the app nothing. sway reduces the usable area
+    by `exclusive_zone + margin.bottom`, so the zone carries `+ stripInset` to
+    cancel the negative margin and the reservation stays exactly
+    `panelHeight`. Without that compensation it comes out 24px short, and the
+    surface arranged below settles over the top key row and clips it — which is
+    how it was found.
+47. Nothing tappable sits in the band. The keys are inset out of it, and so is
+    the restore handle, which is the only way back from a dismissed keyboard
+    and would otherwise land under the home pill.
+48. No input region is masked for either gesture band. This panel is on `Top`
+    and both the strip and the back edge are on `Overlay`, so they take their
+    touches first — the same reason `kDefaultBackEdgeInset` is 0.
 
 ---
 

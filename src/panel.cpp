@@ -43,6 +43,38 @@ constexpr int kDefaultPanelHeight = 200;
 // The fix is ordering, not geometry: see the deferred map in Panel::setShown.
 constexpr int kDefaultBottomMargin = 0;
 
+// The bottom band mobileomarchy's gesture strip owns, which this surface now
+// draws *under* rather than stopping above.
+//
+// Not a contradiction of the essay above, and the sign is the whole difference.
+// That one is about a POSITIVE bottom margin, which moves this surface up and
+// leaves the reservation where it was -- wallpaper below the keys, which is the
+// bug. This is a NEGATIVE one of the same size as the growth applied to the
+// surface, so the surface slides down by exactly what it grew: the keys occupy
+// the top panelHeight and do not move by a pixel, and everything gained is
+// background running to the screen edge behind the home pill.
+//
+// wlroots makes this legal rather than a trick: layer-shell margins are
+// int32_t, and for a bottom-anchored surface it computes
+// `box.y = bounds.y + bounds.height - box.height - margin.bottom` with no
+// clamping. sway delegates to it and adds no validation of its own.
+//
+// The exclusive zone deliberately does NOT include this. The strip reserves its
+// own band; counting it here as well would push every app up twice.
+//
+// No mask goes with it, for the same reason kDefaultBackEdgeInset is now 0:
+// this surface is on Top and the strip is on Overlay, so the strip is above it
+// and takes those touches first. The pill keeps working with no input region
+// of ours involved.
+//
+// Generous rather than exact, and too small is the failure that matters: the
+// keys would sit over the strip's top edge and those touches would vanish with
+// nothing on screen to explain it. Too large costs only background nobody can
+// see. mobileomarchy declares the strip as Style.space(20), and Style.space
+// rounds a *scaled* value whose scale comes from the theme's shell.toml --
+// measured 20 on the default theme, reported as 23 on a larger one.
+constexpr int kDefaultStripInset = 24;
+
 // The left band mobileomarchy's back-edge gesture owns: Overlay layer, left,
 // full height, Style.space(16), and ExclusionMode.Ignore -- so it reserves no
 // space and overlaps whatever else is there.
@@ -56,10 +88,12 @@ constexpr int kDefaultBottomMargin = 0;
 // It matters more than a stray gesture would: the back edge is how the keyboard
 // is dismissed. Swallow it and there is no gesture to put the keyboard away.
 //
-// The gesture STRIP along the bottom needs no such treatment -- it is
-// ExclusionMode.Auto, so it reserves its 20px and this bottom-anchored surface
-// is placed above it rather than over it. Confirmed on the device: the panel
-// sits at y 405..705 of a 720px screen, not 420..720.
+// The gesture STRIP along the bottom needs no masking either, and for the same
+// reason this inset is 0: Overlay sits above Top, so both gesture surfaces take
+// their touches before this one sees them. It does get a geometry treatment
+// though -- see kDefaultStripInset, which runs this surface's background under
+// the strip so there is no band of wallpaper below the keys. The panel now
+// spans y 405..720 of a 720px screen rather than 405..700.
 //
 // The width is NOT 16 logical pixels, which is the trap. mobileomarchy declares
 // it as Style.space(16), and Style.space rounds a *scaled* value -- the scale
@@ -115,6 +149,8 @@ bool Panel::prepare(QString *error)
         m_panelHeight = kDefaultPanelHeight;
     if (m_bottomMargin < 0)
         m_bottomMargin = kDefaultBottomMargin;
+    if (m_stripInset < 0)
+        m_stripInset = kDefaultStripInset;
 
     m_view = new QQuickView;
     m_view->setResizeMode(QQuickView::SizeRootObjectToView);
@@ -174,10 +210,14 @@ bool Panel::prepare(QString *error)
     layerShell->setScope(QStringLiteral("moarchy-keyboard"));
     layerShell->setExclusiveZone(0);
     // Sit above the gesture strip rather than on top of it.
-    layerShell->setMargins(QMargins(0, 0, 0, m_bottomMargin));
-    layerShell->setDesiredSize(QSize(width, m_panelHeight));
+    // Grown by the strip inset and slid down by it, so the keys land exactly
+    // where they did before and only background is added underneath. See
+    // kDefaultStripInset.
+    const int surfaceHeight = m_panelHeight + m_stripInset;
+    layerShell->setMargins(QMargins(0, 0, 0, m_bottomMargin - m_stripInset));
+    layerShell->setDesiredSize(QSize(width, surfaceHeight));
 
-    m_view->resize(width, m_panelHeight);
+    m_view->resize(width, surfaceHeight);
     return true;
 }
 
@@ -255,8 +295,22 @@ void Panel::applyVisibility()
     // Only the full keyboard reserves space. The handle floats over the app --
     // it is a few dozen pixels and resizing every window for it would be worse
     // than the problem it solves.
+    //
+    // + m_stripInset, and leaving it out is a silent 24px bug. sway reduces the
+    // usable area by `exclusive_zone + margin.bottom`, not by the zone alone,
+    // and prepare() gives this surface a NEGATIVE bottom margin of exactly
+    // m_stripInset so its background can run under the gesture strip. Without
+    // the compensation the reservation comes out at panelHeight - stripInset:
+    // measured 176 against a 200px panel, which let the drawer's surface settle
+    // 24px over the top key row and clip it. The keys themselves never moved,
+    // which is what made it look like a paint bug rather than an arrangement
+    // one.
+    //
+    // Reads the same for a non-zero --bottom-margin: the wanted reduction is
+    // panelHeight + bottomMargin, the applied margin is bottomMargin -
+    // stripInset, and the difference is panelHeight + stripInset either way.
     if (layerShell)
-        layerShell->setExclusiveZone(m_mode == Shown ? m_panelHeight : 0);
+        layerShell->setExclusiveZone(m_mode == Shown ? m_panelHeight + m_stripInset : 0);
 
     // The input region follows the mode exactly. In Handle mode it is the
     // handle and nothing else: the rest of the surface is still mapped and

@@ -155,10 +155,18 @@ int main(int argc, char *argv[])
 
     QCommandLineOption bottomMarginOption(
         QStringList { QStringLiteral("bottom-margin") },
-        QStringLiteral("Logical pixels to leave below the keyboard for "
-                       "mobileomarchy's gesture strip. Default 24."),
+        QStringLiteral("Logical pixels to leave below the keyboard. "
+                       "Default 0."),
         QStringLiteral("px"));
     parser.addOption(bottomMarginOption);
+
+    QCommandLineOption stripInsetOption(
+        QStringList { QStringLiteral("gesture-strip-inset") },
+        QStringLiteral("Logical pixels of mobileomarchy's gesture strip to run "
+                       "the keyboard's background under, so no wallpaper shows "
+                       "below the keys. The keys do not move. Default 24."),
+        QStringLiteral("px"));
+    parser.addOption(stripInsetOption);
 
     QCommandLineOption checkLayoutsOption(
         QStringList { QStringLiteral("check-layouts") },
@@ -536,6 +544,8 @@ int main(int argc, char *argv[])
                          std::function<void(int)>([&panel](int px) { panel.setPanelHeight(px); }) },
              std::pair { std::cref(bottomMarginOption),
                          std::function<void(int)>([&panel](int px) { panel.setBottomMargin(px); }) },
+             std::pair { std::cref(stripInsetOption),
+                         std::function<void(int)>([&panel](int px) { panel.setStripInset(px); }) },
          }) {
         if (!parser.isSet(option))
             continue;

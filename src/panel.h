@@ -70,6 +70,11 @@ public:
     // name the compiler already knows, and Mode is declared just above.
     Q_PROPERTY(Mode mode READ mode NOTIFY modeChanged)
 
+    // Read by Main.qml to inset the keys and the restore handle out of the
+    // band. CONSTANT is accurate: main() applies any --gesture-strip-inset
+    // before prepare(), and QML is not evaluated until load() after it.
+    Q_PROPERTY(int stripInset READ stripInset CONSTANT)
+
     Mode mode() const { return m_mode; }
     bool isShown() const { return m_mode == Shown; }
 
@@ -89,6 +94,18 @@ public:
     void setBackEdgeInset(int px) { m_backEdgeInset = px; }
 
     void setPanelHeight(int px) { m_panelHeight = px; }
+
+    // Height of the bottom band mobileomarchy's gesture strip owns. The surface
+    // is grown by this and slid down by it, so the keys stay exactly where they
+    // were and the only thing added is background under the home pill -- which
+    // is the point: without it the keyboard stops at the top of the strip and a
+    // band of wallpaper shows below the keys.
+    //
+    // Everything QML puts near the bottom has to be inset by it too, or it
+    // lands under the pill. See the note in panel.cpp for why it is generous
+    // rather than exact.
+    int stripInset() const { return m_stripInset; }
+    void setStripInset(int px) { m_stripInset = px; }
 
     // Leaves the bottom band to mobileomarchy's gesture strip.
     void setBottomMargin(int px) { m_bottomMargin = px; }
@@ -113,6 +130,7 @@ private:
     QRect m_handleRect;
     int m_backEdgeInset = -1;   // -1 until prepare() applies the default
     int m_bottomMargin = -1;
+    int m_stripInset = -1;   // -1 until prepare() applies the default
     int m_panelHeight = -1;
     inline static Panel *s_instance = nullptr;
 };
