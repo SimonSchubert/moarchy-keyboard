@@ -18,7 +18,10 @@ Window {
     height: 260
     color: "#1e1e2e"
 
-    title: "moa text [" + field.text + "]"
+    // focus= tells a test whether a synthetic tap actually landed on the
+    // field, which is the difference between "the platform sent no event" and
+    // "my tap missed".
+    title: "moa text [" + field.text + "] focus=" + field.activeFocus
 
     Column {
         anchors.centerIn: parent

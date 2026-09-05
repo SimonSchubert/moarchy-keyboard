@@ -11,6 +11,7 @@
 
 #include <QCommandLineParser>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QColor>
 #include <QFile>
 #include <QGuiApplication>
@@ -438,12 +439,34 @@ int main(int argc, char *argv[])
     Panel panel;
 
     // Visibility has two inputs: what the compositor says about text focus, and
-    // what someone asked for over D-Bus. The manual request wins until focus
-    // changes, so `mobileomarchy-toggle-keyboard` can push the keyboard out of
-    // the way without moving focus -- and the next time you tap a text field it
-    // behaves normally again rather than staying stuck down.
+    // what someone asked for over D-Bus. A manual request -- the back gesture,
+    // or mobileomarchy-toggle-keyboard -- wins for a while, so the keyboard can
+    // be pushed out of the way without moving focus.
+    //
+    // "For a while" is the hard part, and getting it wrong left the keyboard
+    // permanently stuck down: dismiss it with the back gesture and tapping the
+    // text field again did nothing, for ever. The override was cleared on
+    // activeChanged, which does not fire nearly often enough. It fires on a net
+    // change of the active flag, and moving focus from one text field to
+    // another coalesces deactivate and activate into one `done`, so the flag
+    // goes true -> true and nothing is signalled. Tapping the SAME field does
+    // not change it either.
+    //
+    // So the override is cleared by any of:
+    //   * activate            -- a text input asked for a keyboard
+    //   * any `done`          -- the focused client said something about its
+    //                            text state, which is what tapping into a field
+    //                            produces
+    //   * the active flag changing, as before
+    //
+    // with a short grace period, so that the settling updates which arrive just
+    // after a hide do not immediately undo it. Erring towards showing is
+    // deliberate: a keyboard that reappears slightly too eagerly is a nuisance,
+    // and one that will not come back at all makes the phone unusable.
     static bool manualOverride = false;
     static bool manualWanted = false;
+    static QElapsedTimer sinceOverride;
+    constexpr int kOverrideGraceMs = 700;
 
     auto applyVisibility = [&] {
         const bool wanted = manualOverride ? manualWanted : inputMethod.isActive();
@@ -451,16 +474,32 @@ int main(int argc, char *argv[])
         osk.setVisible(wanted);
     };
 
+    auto clearOverride = [&](const char *why) {
+        if (!manualOverride)
+            return;
+        if (sinceOverride.isValid() && sinceOverride.elapsed() < kOverrideGraceMs)
+            return;
+        qCInfo(lcMain) << "manual override cleared by" << why;
+        manualOverride = false;
+        applyVisibility();
+    };
+
     QObject::connect(&inputMethod, &InputMethod::activeChanged, &app, [&] {
         manualOverride = false;
         applyVisibility();
     });
+
+    QObject::connect(&inputMethod, &InputMethod::activated, &app,
+                     [&] { clearOverride("activate"); });
+    QObject::connect(&inputMethod, &InputMethod::stateApplied, &app,
+                     [&] { clearOverride("text-input state update"); });
 
     QObject::connect(&osk, &OskService::visibleChanged, &app, [&] {
         if (osk.visible() == panel.isShown())
             return;
         manualOverride = true;
         manualWanted = osk.visible();
+        sinceOverride.start();
         applyVisibility();
     });
 

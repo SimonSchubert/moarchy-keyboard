@@ -87,6 +87,18 @@ public:
 Q_SIGNALS:
     void activeChanged();
     void stateChanged();
+
+    // Every `done`, whether or not anything this class exposes changed.
+    //
+    // activeChanged is not enough to drive visibility, and relying on it was a
+    // bug: when focus moves from one text field to another the compositor
+    // coalesces deactivate and activate into a single done, so the active state
+    // goes true -> true and no change is ever signalled. Anything that needs to
+    // know "the text input said something" has to listen to this instead.
+    void stateApplied();
+
+    // Every `activate`, including one that does not change the active state.
+    void activated();
     // Another input method already holds the seat. Fatal: two keyboards fighting
     // over one seat is worse than none (AC 7).
     void unavailable();

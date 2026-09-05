@@ -29,6 +29,7 @@ void InputMethod::handleActivate(void *data, zwp_input_method_v2 *)
     // before `done`.
     self->m_pending = State {};
     self->m_pending.active = true;
+    Q_EMIT self->activated();
 }
 
 void InputMethod::handleDeactivate(void *data, zwp_input_method_v2 *)
@@ -72,6 +73,8 @@ void InputMethod::handleDone(void *data, zwp_input_method_v2 *)
         Q_EMIT self->activeChanged();
     if (previous.purpose != self->m_current.purpose || previous.hint != self->m_current.hint)
         Q_EMIT self->stateChanged();
+
+    Q_EMIT self->stateApplied();
 }
 
 void InputMethod::handleUnavailable(void *data, zwp_input_method_v2 *)
