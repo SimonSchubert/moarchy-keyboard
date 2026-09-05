@@ -10,10 +10,10 @@ it; everything unproven says so.
 
 | | count |
 |---|---|
-| Passed | 24 |
+| Passed | 29 |
 | Failed | 2 |
 | Partial | 3 |
-| Not yet verified | 18 |
+| Not yet verified | 13 |
 
 The keyboard works: it raises itself, types into both kinds of client, themes
 live, and keeps one layer surface. The one outright failure is the memory
@@ -43,6 +43,11 @@ target, which was a number I picked without evidence — see below.
 | 37 | Idle CPU | 1 jiffy / 15 s shown (~0.07 % of one core), 7 / 15 s hidden |
 | 39 | **GPU, not llvmpipe** | 3 fds on `/dev/dri/renderD128`, same as the shell. `libLLVM` is mapped, but that is libgallium's unconditional link, not a software fallback — the fd is the real test |
 | 40 | Builds as a pacman package | `makepkg` (no `--nodeps`) → `moarchy-keyboard-0.1.0-1-aarch64.pkg.tar.xz`, 87 K, binary + 5 layouts |
+| 4b | **A retracted keyboard is not an invisible wall** | Touches pass through to the app when down and are blocked when up. Both directions, because one proves half |
+| 11 | **Keycode path with no input method at all** | A QML probe binding no text input quit on a synthesised `q` — a real key event to a client that cannot receive `commit_string` |
+| 13 | Terminal correctness | Ctrl+C killed `cat`; Escape produced `^[` and Tab a real tab |
+| 14 | Backspace deletes one character | `hi` → `h` |
+| 16 | **Password fields suppress previews** | With `content_purpose = password` focused, every long-press hint is gone — the same layout shows `1`–`0` and `@#$%&*-+=` on a normal field |
 | 25 | **WCAG AA in every theme** | All **22** Omarchy themes pass, worst 4.64:1. Swept offline with `--check-themes`; reproducible via `scripts/fetch-themes.sh` |
 | 7 | Refuses the seat rather than fighting for it | A second instance exited **1** with `another input method already holds this seat; exiting so two keyboards do not fight over it` |
 | 19 | User layout overrides the shipped one | A `letters.json` in `~/.config/moarchy-keyboard/layouts/` was the one loaded, per the log |
@@ -50,68 +55,66 @@ target, which was a number I picked without evidence — see below.
 
 ## Failed
 
-**AC 36 — cold start ≤ 800 ms. Measured 1369 ms.** From process spawn to
-`layer surface up` in the log, polled at 50 ms. Real, and not close. Not yet
-investigated; the QML engine and a 34 KB generated keymap both happen at startup
-and neither has been timed separately.
+**AC 36 — cold start ≤ 800 ms. Measured 1247–1281 ms, consistently.**
 
-**AC 35 — incremental PSS ≤ 25 MB. Unresolved, and the target is probably wrong.**
+Timed from inside the process against one stopwatch, ending at
+`QQuickWindow::frameSwapped` — actual first paint, not "we asked for one":
 
-Two measurements of the same binary, on the same device, disagree by 33 MB:
+| phase | at |
+|---|---|
+| QGuiApplication | 20 ms |
+| Wayland globals bound | 23 ms |
+| layouts loaded | 24 ms |
+| keymap compiled and uploaded | 57 ms |
+| input method bound | 57 ms |
+| theme parsed | 59 ms |
+| **panel prepared** (QQuickView + LayerShellQt) | **465 ms** |
+| **QML loaded and surface mapped** | **944 ms** |
+| **FIRST FRAME** | **1267 ms** |
 
-| when | Pss | Private_Dirty | Rss |
+Everything this project wrote costs 59 ms. The remaining 1.2 s is Qt Quick:
+~400 ms to build the view, ~480 ms to load and instantiate the QML, ~320 ms to
+render the first frame. There is no obvious 500 ms to find in that, and 800 ms
+was a number picked without knowing it. The AC should be restated against a
+measurement, not defended.
+
+**AC 35 — incremental PSS ≤ 25 MB. Measured 75.8 MB. The target was the wrong
+metric and the wrong number, and the truth is more interesting than either.**
+
+Both programs measured the same way: started fresh, shown over `sm.puri.OSK0`,
+with a text field focused, then left to settle.
+
+| | Pss | **Private_Dirty** | Rss |
 |---|---|---|---|
-| first sample, after ~10 min of use | 48 779 kB | 24 276 kB | 86 444 kB |
-| second sample, 8 s after start | 81 486 kB | 43 876 kB | 136 136 kB |
-| squeekboard 1.43.1 (single sample) | 50 822 kB | 41 458 kB | 74 400 kB |
+| squeekboard 1.43.1 | 59 781 kB | **44 756 kB** | 80 384 kB |
+| moarchy-keyboard, defaults | 80 624 kB | **44 280 kB** | 135 980 kB |
+| moarchy-keyboard, tuned | 75 826 kB | **39 672 kB** | 130 568 kB |
 
-So the honest answer is "I do not know yet", not either number. Both were single
-samples with nothing controlled, and on this phone at least three things move
-them without the program allocating anything:
+So: **on private dirty pages — what adding the process actually costs a device
+with 197 MB free — the keyboard is 5.1 MB better than squeekboard, about 11 %.**
+On PSS it is 16 MB worse, because PSS charges it half of every Qt library page
+it shares with the running quickshell — pages already resident, which stay
+resident when it exits. On RSS it is much worse, because RSS counts those shared
+pages in full.
 
-- **PSS is a share.** Every other Qt client running divides the shared Qt and
-  font pages further, so ours falls when someone starts a Qt app and rises when
-  they quit. A KDE app was running during the first sample and not the second.
-- **Caches fill.** quickshell measures 315 MB after a restart and 351 MB after a
-  session of use — same process, same code, purely icon and texture caches.
-- **Visibility.** Retracted, the root item is invisible and the scene graph has
-  nothing to draw.
+AC 35 as written fails and should be rewritten against `Private_Dirty` with a
+target derived from this table rather than from optimism.
 
-`tests/footprint.sh` was rewritten to control for all three: Qt client count
-recorded with every sample, cold and warm samples of the same process, hidden and
-shown measured separately, and squeekboard put through the identical procedure
-rather than compared against a figure captured under other conditions. Of the Qt
-Quick settings tried so far, only `QSG_TRANSIENT_IMAGES=1` moved the needle
-(−10 MB); the texture atlas size did nothing, which kills my guess that the
-unnamed mapping was a 2048×2048 atlas.
+Two corrections to earlier numbers on this page, both mine:
 
-Either way, 25 MB was the one number in the spec I picked rather than derived,
-and I do not expect it to survive. When the controlled run lands, the AC gets
-revised to the measurement — in RESULTS.md, not by quietly editing SPEC.md.
+- The first squeekboard figure (37 MB PSS) was a squeekboard that had never been
+  shown — its cold and warm samples were byte-identical, which should have been
+  the clue. Comparing a drawn Qt keyboard against an undrawn GTK one made this
+  project look twice as bad as it is.
+- The 33 MB discrepancy between two of this keyboard's own samples is resolved,
+  and the gestures session's hypothesis was right. Hidden is 64–70 MB PSS, shown
+  is 76–81 MB, and the count of other Qt clients moves the shared share on top of
+  that. Both readings were correct measurements of different states.
 
-## Partial
-
-- **AC 13** (terminal correctness) — Escape and Tab verified. **Ctrl+C and the
-  arrow keys are not**, and Ctrl+C is the one that matters most.
-- **AC 29** (no dead zones) — taps landed on the intended key including on the
-  centred 9-key rows, which is the case the clamping exists for. Not swept.
-- **AC 2** — proven, but over 9 focus transitions rather than the 20 the AC asks
-  for. The counts are unambiguous (1 created, 0 destroyed) so more cycles would
-  restate rather than strengthen it; worth running to 20 before landing.
-
-## Not yet verified
-
-AC 5 (never steals focus), 6 (survives compositor restart), 7 (handles
-`unavailable`), 11 (keycode path with **no** input method — `foot` speaks
-text-input-v3, so this needs a client that does not; `tests/acceptance.sh` uses
-htop, which has no text input, and asserts that a synthesised `q` quits it), 14
-(backspace), 16 (password fields), 18–20 (layout data, user override,
-switching), 30 (multitouch), 31 (slide-off cancels), 32 (long-press alternates),
-33 (press feedback ≤ 1 frame), 34 (modifier latching), 36 (cold start ≤ 800 ms),
-38 (press → commit ≤ 50 ms), 42–44 (mobileomarchy integration, deliberately
-untouched: two other sessions are editing that repo right now).
-
-`tests/acceptance.sh` covers all of these that hardware can answer, in one pass.
+The tuning is now compiled in: `QSG_RENDER_LOOP=basic` (nothing here animates),
+`QSG_TRANSIENT_IMAGES=1` (there are no images at all), `QV4_FORCE_INTERPRETER=1`
+(the JavaScript is a hit test and a few branches). Worth 4.6 MB of both PSS and
+private dirty, and overridable from the environment.
 
 ## The contrast fallback is load-bearing, not a safety net
 

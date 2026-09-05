@@ -113,6 +113,19 @@ print(found[-1] if found else '')" "$1"
 }
 
 probe_taps() { probe_field taps; }
+
+# Wait for a window to actually exist. Every fixed sleep in this file has been
+# wrong at least once: this device is slow and its speed varies with what the
+# suite itself is doing to it, so `sleep 4` after launching something is a coin
+# toss that reads as a product failure when it loses.
+wait_for_window() {
+  local pattern=$1 tries=${2:-40}
+  for _ in $(seq 1 "$tries"); do
+    swaymsg -t get_tree 2>/dev/null | grep -q "$pattern" && return 0
+    sleep 1
+  done
+  return 1
+}
 probe_present() { swaymsg -t get_tree 2>/dev/null | grep -q "moa probe"; }
 
 # Stale probes from an earlier run stack up and the wrong one gets read.
@@ -123,17 +136,27 @@ probe_clear() {
 
 probe_start() {
   probe_clear
-  swaymsg exec "qml6 /tmp/touch-probe.qml" >/dev/null 2>&1
+  # Launched directly rather than through `swaymsg exec`, so its output is
+  # capturable. Through swaymsg the process is detached and anything it prints
+  # is lost, which is why "the probe never opened" stayed unexplained across
+  # three runs -- there was no way to see whether qml6 had failed or was merely
+  # slow.
+  setsid qml6 /tmp/touch-probe.qml > /tmp/moa-probe-out.log 2>&1 < /dev/null &
 
-  # Poll rather than sleep a fixed time. A flat 7 s was enough once the device
-  # was warm and not enough on the first use of the run -- starting a second QML
-  # engine on a cold A53 is slow and variable -- so two ACs reported "the probe
-  # never opened" while a later section started one fine.
-  for _ in $(seq 1 20); do
+  # Poll rather than sleep a fixed time, and poll for a LONG time. Starting a
+  # second QML engine on this A53, while the keyboard is also running one and
+  # the suite is hammering the device, has taken over 20 s -- with qml6 printing
+  # nothing at all, because it had not failed, it was simply still starting.
+  # Three runs recorded "the probe never opened" on a 20 s budget.
+  for _ in $(seq 1 60); do
     probe_present && break
     sleep 1
   done
-  probe_present || return 1
+  if ! probe_present; then
+    echo "  probe failed to appear; qml6 said:" >&2
+    sed 's/^/    /' /tmp/moa-probe-out.log 2>/dev/null | head -5 >&2
+    return 1
+  fi
 
   swaymsg '[title="^moa probe"] focus' >/dev/null 2>&1
   sleep 1
@@ -278,7 +301,7 @@ fi
 section "AC 5 -- never steals keyboard focus" || true
 if ours; then
 swaymsg exec "foot -a moa-focus cat -A" >/dev/null 2>&1
-sleep 4
+wait_for_window "moa-focus"
 swaymsg "[app_id=moa-focus] focus" >/dev/null 2>&1
 sleep 2
 FOCUSED=$(swaymsg -t get_tree | python3 -c '
@@ -355,9 +378,9 @@ sleep 4
 # focus changes, neither touches a workspace, and a cycle that fails to move
 # focus shows up as a missing activate rather than as a silent pass.
 swaymsg exec "foot -a moa-cycle cat -A" >/dev/null 2>&1
-sleep 4
+wait_for_window "moa-cycle" || echo "  (moa-cycle never appeared)" >&2
 probe_start
-if ! swaymsg -t get_tree | grep -q "moa-cycle" || ! probe_present; then
+if ! wait_for_window "moa-cycle" 5 || ! probe_present; then
   no "AC 2: need both a text window and a no-text window; one did not open"
 else
   for _ in $(seq 1 20); do

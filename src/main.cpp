@@ -52,6 +52,31 @@ int main(int argc, char *argv[])
 {
     StartupClock::start();
 
+    // Three Qt Quick settings, set here rather than left to the environment
+    // because they were measured on the target and this program can always
+    // afford them.
+    //
+    //   basic render loop      -- no render thread. This keyboard animates
+    //                             nothing; a thread and its scene graph
+    //                             double-buffering are pure cost.
+    //   transient images       -- drop decoded image data after upload. There
+    //                             are no images at all in the QML, so this only
+    //                             ever frees glyph and atlas scratch.
+    //   V4 interpreter         -- no JIT. The JavaScript here is a hit test and
+    //                             a few branches per key; JIT code pages cost
+    //                             more than they save.
+    //
+    // Together, measured on the phone: 75.8 MB PSS and 39.7 MB private dirty
+    // against 80.6 and 44.3 with the defaults -- about 4.6 MB of each. Set with
+    // qputenv rather than setenv so an operator can still override them, since
+    // qputenv does not replace a value already present in the environment.
+    if (qEnvironmentVariableIsEmpty("QSG_RENDER_LOOP"))
+        qputenv("QSG_RENDER_LOOP", "basic");
+    if (qEnvironmentVariableIsEmpty("QSG_TRANSIENT_IMAGES"))
+        qputenv("QSG_TRANSIENT_IMAGES", "1");
+    if (qEnvironmentVariableIsEmpty("QV4_FORCE_INTERPRETER"))
+        qputenv("QV4_FORCE_INTERPRETER", "1");
+
     // No LayerShellQt::Shell::useLayerShell() here: deprecated since 6.6 and
     // unnecessary since 6.5, because LayerShellQt::Window::get() -- which
     // Panel::prepare() calls before the view is ever shown -- now arranges the
