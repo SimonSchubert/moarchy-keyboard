@@ -157,6 +157,45 @@ QColor Theme::roleColor(const QString &key) const
     return QColor(m_raw.value(key));
 }
 
+QColor Theme::resolveColor(const QString &expression, bool *ok) const
+{
+    *ok = true;
+    const QString text = expression.trimmed();
+
+    if (text.startsWith(QLatin1String("mix("), Qt::CaseInsensitive)
+        && text.endsWith(QLatin1Char(')'))) {
+        const QStringList parts =
+            text.mid(4, text.size() - 5).split(QLatin1Char(';'));
+        // `;` rather than `,` inside mix(), because the outer --role argument is
+        // already comma-separated and nesting the same separator makes the
+        // grammar ambiguous for no benefit.
+        if (parts.size() != 3) {
+            *ok = false;
+            return {};
+        }
+        bool baseOk = false, overOk = false;
+        const QColor base = resolveColor(parts.at(0), &baseOk);
+        const QColor over = resolveColor(parts.at(1), &overOk);
+        bool alphaOk = false;
+        const double alpha = parts.at(2).trimmed().toDouble(&alphaOk);
+        if (!baseOk || !overOk || !alphaOk) {
+            *ok = false;
+            return {};
+        }
+        return composite(over, base, alpha);
+    }
+
+    if (text.startsWith(QLatin1Char('#'))) {
+        const QColor literal(text);
+        *ok = literal.isValid();
+        return literal;
+    }
+
+    const QColor role = roleColor(text);
+    *ok = role.isValid();
+    return role;
+}
+
 QColor Theme::composite(const QColor &foreground, const QColor &background, double alpha)
 {
     // Straight source-over. Contrast has to be measured on what is actually

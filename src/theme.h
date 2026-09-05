@@ -94,6 +94,20 @@ public:
     // subtitle ends up illegible on half the phone.
     QColor roleColor(const QString &key) const;
 
+    // Resolves a colour written as one of:
+    //
+    //   foreground                    a role name from colors.toml
+    //   #rrggbb                       a literal
+    //   mix(background,foreground,0.08)   a role composited over another
+    //
+    // The mix() form exists because two role names cannot describe a raised
+    // card. A surface painted as `alpha(foreground, 0.08)` over `background` is
+    // neither role, and measuring against either one alone under-reports: on
+    // Catppuccin the difference between the composite and lighter_background is
+    // 4.50:1 against 5.44:1, which is the difference between failing AA and
+    // thinking you passed.
+    QColor resolveColor(const QString &expression, bool *ok) const;
+
     QString name() const { return m_name; }
     bool isDark() const { return m_dark; }
 

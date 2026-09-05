@@ -181,10 +181,11 @@ int main(int argc, char *argv[])
                     QTextStream(stderr) << "--role wants <fgRole>,<bgRole>[,alpha]\n";
                     return 2;
                 }
-                const QColor bg = theme.roleColor(parts.at(1).trimmed());
-                QColor fg = theme.roleColor(parts.at(0).trimmed());
-                if (!fg.isValid() || !bg.isValid()) {
-                    out << QStringLiteral("SKIP %1  (theme has no %2 or %3)\n")
+                bool fgOk = false, bgOk = false;
+                const QColor bg = theme.resolveColor(parts.at(1), &bgOk);
+                QColor fg = theme.resolveColor(parts.at(0), &fgOk);
+                if (!fgOk || !bgOk) {
+                    out << QStringLiteral("SKIP %1  (could not resolve %2 or %3)\n")
                                .arg(name.leftJustified(20), parts.at(0), parts.at(1));
                     continue;
                 }
