@@ -93,22 +93,50 @@ section() {
 # toplevel reports itself activated over wlr-foreign-toplevel. That breaks the
 # next test as surely as it breaks anyone else's, and this suite spends its time
 # driving exactly the focus transitions that produce it.
-# The touch probe puts its tap count in its window title; sway reports titles.
-probe_taps() {
-  swaymsg -t get_tree 2>/dev/null | python3 -c '
-import json, sys
+# The probe reports through its window title, because Qt.application.name does
+# not set the Wayland app_id -- that comes from the desktop file name at
+# startup, so the window is always org.qt-project.qml and app_id selectors
+# match nothing. Everything here goes by title instead.
+probe_field() {
+  swaymsg -t get_tree 2>/dev/null | python3 -c "
+import json, sys, re
+field = sys.argv[1]
+found = []
 def walk(n):
-    name = n.get("name") or ""
-    if name.startswith("moa touch probe"):
-        parts = name.split()
-        print(parts[-1] if parts[-1].isdigit() else 0)
-    for k in n.get("nodes", []) + n.get("floating_nodes", []): walk(k)
-walk(json.load(sys.stdin))' | head -1
+    name = n.get('name') or ''
+    if name.startswith('moa probe'):
+        m = re.search(field + r'=(\\S+)', name)
+        if m: found.append(m.group(1))
+    for k in n.get('nodes', []) + n.get('floating_nodes', []): walk(k)
+walk(json.load(sys.stdin))
+print(found[-1] if found else '')" "$1"
 }
 
-# Distinguish "the probe is not there" from "the probe saw nothing".
-probe_present() {
-  swaymsg -t get_tree 2>/dev/null | grep -q "moa touch probe"
+probe_taps() { probe_field taps; }
+probe_present() { swaymsg -t get_tree 2>/dev/null | grep -q "moa probe"; }
+
+# Stale probes from an earlier run stack up and the wrong one gets read.
+probe_clear() {
+  swaymsg '[title="^moa probe"] kill' >/dev/null 2>&1
+  sleep 1
+}
+
+probe_start() {
+  probe_clear
+  swaymsg exec "qml6 /tmp/touch-probe.qml" >/dev/null 2>&1
+
+  # Poll rather than sleep a fixed time. A flat 7 s was enough once the device
+  # was warm and not enough on the first use of the run -- starting a second QML
+  # engine on a cold A53 is slow and variable -- so two ACs reported "the probe
+  # never opened" while a later section started one fine.
+  for _ in $(seq 1 20); do
+    probe_present && break
+    sleep 1
+  done
+  probe_present || return 1
+
+  swaymsg '[title="^moa probe"] focus' >/dev/null 2>&1
+  sleep 1
 }
 
 restore_focus() {
@@ -156,7 +184,7 @@ cleanup() {
   swaymsg "[app_id=moa-htop] kill"    >/dev/null 2>&1
   swaymsg "[app_id=moa-focus] kill"   >/dev/null 2>&1
   swaymsg "[app_id=moa-cycle] kill"   >/dev/null 2>&1
-  swaymsg "[app_id=moa-touch] kill"   >/dev/null 2>&1
+  swaymsg '[title="^moa probe"] kill' >/dev/null 2>&1
   swaymsg "[app_id=moa-pwtest] kill"  >/dev/null 2>&1
   swaymsg "[title=\"moa password test\"] kill" >/dev/null 2>&1
   restore_focus
@@ -210,37 +238,41 @@ log "$S" | grep -iE "another|unavailable|already" | tail -3
 
 section "AC 11 -- keycode path with NO input method at all" || true
 if ours; then
-# htop speaks no text-input-v3, so nothing activates the input method. Force the
-# keyboard up over D-Bus and tap 'q', which is htop's quit key. If htop dies,
-# the keycode path reached a client that has no text input -- which is the half
-# a text-only keyboard cannot do.
-restart --layout letters
-swaymsg exec "foot -a moa-htop htop" >/dev/null 2>&1
-sleep 5
-swaymsg "[app_id=moa-htop] focus" >/dev/null 2>&1
-sleep 2
-busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b true >/dev/null 2>&1
-sleep 1
-echo "  input method active? (expect a keycode fallback):"; visible
-grim /tmp/moa-ac-11-before.png
+  # foot cannot answer this: it speaks text-input-v3 even when running htop, so
+  # a key sent to it arrives as a commit_string and the keycode path is never
+  # exercised. The first two attempts at this AC recorded product failures on
+  # that basis. The probe binds no text input at all, so the input method never
+  # activates and `q` can only reach it as a keycode.
+  restart --layout letters || true
+  probe_start
+  S=$(since)
 
-# Coordinates depend on the LAYOUT, and the first version of this test used
-# terminal-layout numbers against the letters layout -- five rows of 60 versus
-# four rows of 75 -- so the tap aimed at `q` landed on `a`, htop lived, and the
-# test reported a product failure that was entirely its own.
-#
-# The keyboard was restarted with --layout letters above, and with htop focused
-# nothing advertises a content purpose, so nothing overrides it. letters is four
-# rows of 75 starting at y=420: centres 457, 532, 607, 682. `q` is the first key
-# of row 0, so x = unit/2 = 18.
-sudo python3 /tmp/tap.py --scale 2 --warmup 180,200 18,457 >/dev/null 2>&1
-sleep 2
-if swaymsg -t get_tree | grep -q "moa-htop"; then
-  no "AC 11: htop survived, so 'q' never arrived as a keycode"
-  swaymsg "[app_id=moa-htop] kill" >/dev/null 2>&1
-else
-  ok "AC 11 (htop quit on a synthesised 'q')"
-fi
+  echo "  input method active (expect false -- no text field anywhere):"
+  busctl --user get-property sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 Visible 2>&1 | sed 's/^/    Visible: /'
+  busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b true >/dev/null 2>&1
+  sleep 2
+  grim /tmp/moa-ac-11.png
+
+  if ! probe_present; then
+    no "AC 11: the probe never opened -- inconclusive"
+  else
+    # letters layout: 4 rows of 75 from y=420, so centres 457/532/607/682.
+    # `q` is the first key of row 0, x = unit/2 = 18.
+    # Say which layout is actually loaded. Three runs reported AC 11 as a
+    # product failure while the mechanism was fine and the tap was simply
+    # landing on a different key, because the keyboard was showing `terminal`
+    # and the coordinates assumed `letters`.
+    echo "  layout in use: $(log "$S" | grep -oE 'loaded "[a-z-]+"' | tail -1)"
+
+    sudo -n python3 /tmp/tap.py --scale 2 --warmup 180,150 18,457 >/dev/null 2>&1
+    sleep 3
+    if probe_present; then
+      no "AC 11: the probe survived; key seen was '$(probe_field key)' (empty means no key arrived at all)"
+    else
+      ok "AC 11 (the probe quit on a synthesised 'q' with no input method active)"
+    fi
+  fi
+  probe_clear
 fi
 
 section "AC 5 -- never steals keyboard focus" || true
@@ -308,25 +340,33 @@ pkill -x moarchy-keyboar 2>/dev/null; sleep 1
 WAYLAND_DEBUG=1 setsid "$BINARY" >/tmp/moa-wl20.log 2>&1 </dev/null &
 sleep 4
 
-# This section needs a window with a TEXT FIELD to focus, because
-# activate/deactivate is driven by text focus, not by window focus. The first
-# version cycled onto moa-kbdtest, which this run never creates -- so every
-# focus command failed silently, activates came out 0, and "1 surface, 0
-# destroys" was true of a keyboard that had never been asked to do anything.
-# A pass that cannot fail is not a pass.
+# Drives activate/deactivate by alternating between a window that HAS a text
+# input and one that has none -- not by switching workspaces.
+#
+# Two earlier versions of this failed for the same underlying reason. The first
+# cycled onto a window this run never creates, so every focus command failed
+# silently and activates came out 0 while "1 surface, 0 destroys" read as a
+# pass. The second switched to an empty workspace, which reaches a workspace
+# without necessarily landing focus on anything in it: 20 cycles produced 3
+# activates. It also churned workspace state another session's tests depend on.
+#
+# foot speaks text-input-v3, so focusing it activates the input method. The QML
+# probe has no text field anywhere, so focusing it deactivates. Both are plain
+# focus changes, neither touches a workspace, and a cycle that fails to move
+# focus shows up as a missing activate rather than as a silent pass.
 swaymsg exec "foot -a moa-cycle cat -A" >/dev/null 2>&1
 sleep 4
-if ! swaymsg -t get_tree | grep -q "moa-cycle"; then
-  no "AC 2: could not open a text window to cycle focus against"
+probe_start
+if ! swaymsg -t get_tree | grep -q "moa-cycle" || ! probe_present; then
+  no "AC 2: need both a text window and a no-text window; one did not open"
 else
-  # 0.4 s per step gave 4 activates out of 20 cycles on this A53: the
-  # compositor had not finished delivering the previous focus change before the
-  # next one arrived, so most cycles produced no activate at all.
   for _ in $(seq 1 20); do
-    swaymsg "[app_id=moa-cycle] focus" >/dev/null 2>&1; sleep 1
-    swaymsg "workspace 19" >/dev/null 2>&1; sleep 1
+    swaymsg "[app_id=moa-cycle] focus" >/dev/null 2>&1; sleep 0.8
+    swaymsg '[title="^moa probe"] focus' >/dev/null 2>&1; sleep 0.8
   done
 fi
+swaymsg "[app_id=moa-cycle] kill" >/dev/null 2>&1
+probe_clear
 A=$(grep -c "zwp_input_method_v2#[0-9]*\.activate" /tmp/moa-wl20.log)
 # Guard the guard: with zero activates the surface counts prove nothing.
 [[ $A -lt 5 ]] && no "AC 2: only $A activates -- the cycle did not drive the input method"
@@ -350,10 +390,7 @@ if ours; then
   # Tested both ways, because only one direction proves only half of it: down
   # must pass through, up must NOT. A keyboard that always passes touches
   # through cannot be typed on.
-  swaymsg exec "qml6 /tmp/touch-probe.qml" >/dev/null 2>&1
-  sleep 6
-  swaymsg "[app_id=moa-touch] focus" >/dev/null 2>&1
-  sleep 1
+  probe_start
 
   # 180,600 is inside the panel's footprint (the panel occupies y 420..720).
   busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b false >/dev/null 2>&1
@@ -383,7 +420,7 @@ if ours; then
   else
     no "AC 4b: the raised keyboard let a touch through to the app underneath"
   fi
-  swaymsg "[app_id=moa-touch] kill" >/dev/null 2>&1
+  probe_clear
 fi
 
 section "AC 19 -- a user layout overrides the shipped one" || true

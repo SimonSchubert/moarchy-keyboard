@@ -74,7 +74,19 @@ bool Panel::prepare(QString *error)
         return false;
     }
 
-    layerShell->setLayer(LayerShellQt::Window::LayerTop);
+    // Overlay, not Top.
+    //
+    // sway renders a fullscreen window ABOVE the Top layer, so on Top this
+    // keyboard is invisible behind any fullscreen app -- and mobileomarchy
+    // fullscreens things routinely (every TUI launched through
+    // mobileomarchy-launch-tui, for one). The failure is total: a text field in
+    // a fullscreen app gets a keyboard that is mapped, has an exclusive zone,
+    // reports itself visible on D-Bus, and cannot be seen or touched.
+    //
+    // Found by accident -- a fullscreen test probe hid the keyboard and the
+    // symptom looked like a keyboard bug, which it was, just not the one being
+    // tested.
+    layerShell->setLayer(LayerShellQt::Window::LayerOverlay);
     layerShell->setAnchors(LayerShellQt::Window::Anchors(
         LayerShellQt::Window::AnchorLeft | LayerShellQt::Window::AnchorRight
         | LayerShellQt::Window::AnchorBottom));

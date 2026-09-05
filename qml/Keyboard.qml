@@ -97,8 +97,21 @@ Item {
     }
 
     function applySuggestion() {
+        if (layoutChosenByHand)
+            return
+
         var suggested = Router.suggestedLayout
-        if (suggested !== "" && !layoutChosenByHand && suggested !== layoutName)
+
+        // An EMPTY suggestion is a real answer -- "this app wants the ordinary
+        // keyboard" -- not an absence of one. Treating it as "leave things
+        // alone" meant the terminal layout, once auto-selected for a terminal,
+        // stayed selected for every app focused afterwards. Type in a terminal,
+        // then tap a search box, and you got esc/tab/ctrl/alt and arrow keys
+        // with no letters row until you switched by hand.
+        if (suggested === "")
+            suggested = Layouts.initialLayout
+
+        if (suggested !== layoutName)
             selectLayout(suggested, false)
     }
 
