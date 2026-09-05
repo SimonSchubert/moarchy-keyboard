@@ -19,16 +19,29 @@ namespace {
 // Android and iOS both sit on a phone this shape.
 constexpr int kPanelHeight = 300;
 
-// A one-pixel region entirely outside the surface.
+// The input region for a retracted keyboard: one pixel, in the corner.
 //
-// Not an empty QRegion, which looks like it should mean "no input" and means
-// the opposite: QWaylandWindow::setMask treats an empty mask as "unset the
-// input region", and an unset input region is the whole surface. So the
-// retracted keyboard would still swallow every touch along the bottom of the
-// screen while drawing nothing -- an invisible wall across the app underneath.
+// Two wrong answers here, and the failure mode of both is the same and is
+// nasty -- an invisible wall across the bottom third of every app, swallowing
+// touches while drawing nothing.
+//
+// An empty QRegion looks like it should mean "no input" and means the opposite:
+// QWaylandWindow::setMask treats an empty mask as "unset the input region", and
+// an unset input region is the WHOLE surface.
+//
+// A region outside the surface, QRegion(-1, -1, 1, 1), should work -- wl_region
+// accepts rectangles outside the surface and the compositor intersects them --
+// but it depends on Qt passing the rect through rather than clipping it to the
+// window first, and if Qt ever clips, the result is an empty region and
+// therefore the first bug again.
+//
+// So: one real pixel, inside the surface, which cannot be clipped to nothing.
+// It costs a single dead pixel at the top-left corner of where the panel sits
+// while the keyboard is down, and in exchange the behaviour does not depend on
+// how a Qt internal treats out-of-bounds rectangles.
 const QRegion &noInputRegion()
 {
-    static const QRegion region(-1, -1, 1, 1);
+    static const QRegion region(0, 0, 1, 1);
     return region;
 }
 

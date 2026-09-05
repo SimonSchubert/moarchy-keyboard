@@ -131,6 +131,7 @@ cleanup() {
   swaymsg "[app_id=moa-htop] kill"    >/dev/null 2>&1
   swaymsg "[app_id=moa-focus] kill"   >/dev/null 2>&1
   swaymsg "[app_id=moa-cycle] kill"   >/dev/null 2>&1
+  swaymsg "[app_id=moa-touch] kill"   >/dev/null 2>&1
   swaymsg "[app_id=moa-pwtest] kill"  >/dev/null 2>&1
   swaymsg "[title=\"moa password test\"] kill" >/dev/null 2>&1
   restore_focus
@@ -310,6 +311,48 @@ elif [[ $A -ge 5 ]]; then
   no "AC 2 (created $C, destroyed $D)"
 fi
 restore_focus
+
+section "AC 4b -- retracted passes touches through, raised does not" || true
+if ours; then
+  # The nastiest failure of the retract path: the surface stays mapped (which is
+  # the point -- see src/panel.h) but keeps its input region, so it swallows
+  # every touch along the bottom third of the screen while drawing nothing.
+  # Invisible, and indistinguishable from an unresponsive app.
+  #
+  # Tested both ways, because only one direction proves only half of it: down
+  # must pass through, up must NOT. A keyboard that always passes touches
+  # through cannot be typed on.
+  rm -f /tmp/moa-touch-count
+  swaymsg exec "qml6 /tmp/touch-probe.qml" >/dev/null 2>&1 || \
+    swaymsg exec "qml /tmp/touch-probe.qml" >/dev/null 2>&1
+  sleep 6
+  swaymsg "[app_id=moa-touch] focus" >/dev/null 2>&1
+  sleep 1
+
+  # 180,600 is inside the panel's footprint (the panel occupies y 420..720).
+  busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b false >/dev/null 2>&1
+  sleep 2
+  sudo python3 /tmp/tap.py --scale 2 --warmup 180,200 180,600 >/dev/null 2>&1
+  sleep 1
+  down=$(cat /tmp/moa-touch-count 2>/dev/null || echo 0)
+
+  busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b true >/dev/null 2>&1
+  sleep 2
+  sudo python3 /tmp/tap.py --scale 2 180,600 >/dev/null 2>&1
+  sleep 1
+  up=$(cat /tmp/moa-touch-count 2>/dev/null || echo 0)
+
+  echo "  taps reaching the app: $down with the keyboard down, then $up after one more with it up"
+  # The warmup tap lands in the app area too, so `down` counts it as well.
+  if [[ $down -ge 1 && $up -eq $down ]]; then
+    ok "AC 4b (passes through when down, blocked when up)"
+  elif [[ $down -lt 1 ]]; then
+    no "AC 4b: the retracted keyboard swallowed the touch -- invisible wall"
+  else
+    no "AC 4b: the raised keyboard let a touch through to the app underneath"
+  fi
+  swaymsg "[app_id=moa-touch] kill" >/dev/null 2>&1
+fi
 
 section "AC 19 -- a user layout overrides the shipped one" || true
 if ours; then
