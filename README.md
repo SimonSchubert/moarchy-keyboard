@@ -117,3 +117,9 @@ it shadows the shipped one of the same name; no rebuild.
 Key widths are relative; a row narrower than the widest one centres, and the
 slack is still live — the hit areas tile the panel, so there is nowhere to land
 and hit nothing.
+
+Keys labelled `↵`, `⌫`, `⇧`, `←`, `→`, `↑` or `↓` are drawn as icons rather
+than set as text, because those characters are not in Noto Sans and each one
+otherwise arrives from whatever font happens to be installed. Say
+`"icon": "enter"` (or `backspace`, `shift`, `left`, `right`, `up`, `down`) to
+ask for one directly, or `"icon": "none"` to get the character as text.

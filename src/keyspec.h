@@ -66,6 +66,43 @@ enum Kind {
 Q_ENUM_NS(Kind)
 } // namespace KeyModifier
 
+// Which drawn icon a key shows instead of a text label.
+//
+// Drawn, not typed, and the font situation is why. The layouts label these keys
+// with the obvious characters -- U+21B5 return, U+232B erase, U+21E7 shift --
+// and `sans-serif` on this phone resolves to Noto Sans, which contains NONE of
+// them. So fontconfig substituted a different font per glyph: the return arrow
+// came from Adwaita Mono, erase and shift from JetBrains Mono Nerd Font, the
+// plain arrows from Noto Sans Symbols. Three type designs at once, at the 13px
+// meant for the word "esc", which is exactly why the return arrow looked like a
+// hairline. Worse, it is not reproducible: which fonts happen to be installed
+// decides what the keyboard looks like.
+//
+// RestoreHandle.qml already made this call once, drawing a keyboard out of
+// rectangles because U+2328 renders as an empty box on this phone. Same answer
+// here, with the same reasoning: a drawn icon always draws, always at the
+// weight it was designed at.
+//
+// Omarchy's own icon font was the first thing checked and does not help -- its
+// eight glyphs are the logo, a llama, a cloud and five other brand marks, with
+// no keyboard icons in it.
+namespace KeyIcon {
+Q_NAMESPACE
+QML_ELEMENT
+
+enum Kind {
+    NoIcon,
+    Enter,
+    Backspace,
+    Shift,
+    ArrowLeft,
+    ArrowRight,
+    ArrowUp,
+    ArrowDown,
+};
+Q_ENUM_NS(Kind)
+} // namespace KeyIcon
+
 class KeySpec
 {
     Q_GADGET
@@ -86,6 +123,10 @@ class KeySpec
     Q_PROPERTY(QString label READ label CONSTANT)
     Q_PROPERTY(QString shiftedLabel READ shiftedLabel CONSTANT)
     Q_PROPERTY(QString glyph READ glyph CONSTANT)
+    // Set from an explicit `icon` in the JSON, or inferred from a label that is
+    // one of the characters above. Inferring means every layout already
+    // written -- including a user's -- gets the drawn icons with no edit.
+    Q_PROPERTY(KeyIcon::Kind icon READ icon CONSTANT)
     // The key asked to be drawn from Omarchy's icon font. Whether it CAN be is
     // a runtime question -- the font may not have loaded -- so that part stays
     // in the QML.
@@ -108,6 +149,7 @@ public:
     QString label() const { return m_label; }
     QString shiftedLabel() const { return m_shiftedLabel; }
     QString glyph() const { return m_glyph; }
+    KeyIcon::Kind icon() const { return m_icon; }
     bool iconFont() const { return m_iconFont; }
     QStringList alt() const { return m_alt; }
     bool hasAlternates() const { return !m_alt.isEmpty(); }
@@ -122,6 +164,7 @@ public:
     // dozen setters to say so would be noise.
     KeyType::Kind m_type = KeyType::Character;
     KeyModifier::Kind m_modifier = KeyModifier::NoModifier;
+    KeyIcon::Kind m_icon = KeyIcon::NoIcon;
     QString m_text;
     QString m_shiftedText;
     QString m_label;

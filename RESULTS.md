@@ -286,6 +286,65 @@ keystroke, poll for windows instead of sleeping, fail below five activates, and
 distinguish "the probe never opened" from "the probe saw nothing" — are worth
 more than the results they produced.
 
+## The icons were never one icon set
+
+The keyboard labels its non-character keys with the obvious characters -- U+21B5
+return, U+232B erase, U+21E7 shift, and the four arrows -- and asks for them in
+`sans-serif`. On this phone `fc-match sans-serif` is **Noto Sans**, which
+contains **none of the first three**. So fontconfig substituted, per glyph:
+
+| key | character | where the glyph actually came from |
+|---|---|---|
+| return | U+21B5 | Adwaita Mono |
+| erase | U+232B | JetBrainsMono Nerd Font |
+| shift | U+21E7 | JetBrainsMono Nerd Font |
+| arrows | U+2190-2193 | Noto Sans Symbols |
+
+Three type designs at once, at the 13px meant for the word "esc" -- which is why
+the return arrow read as a hairline. Shift and erase were drawn as hollow
+outlines while the arrows were single strokes, so the set did not agree with
+itself either. And it was never reproducible: which fonts happen to be installed
+decided what the keyboard looked like.
+
+It was also visibly off-centre, measured off the rendered pixels rather than
+judged by eye -- the ink's centre against the keycap's, in physical pixels on
+the 2x display:
+
+| | shift | erase | arrows | esc | tab |
+|---|---|---|---|---|---|
+| before | **-5.0** | **-5.5** | +0.5 | +2.5 | -0.5 |
+| after | -1.0 | -1.0 | 0.0 to -0.5 | +1.5 | -1.5 |
+
+Shift and erase sat two and a half logical pixels high because a monospace
+terminal glyph is positioned for a text cell, not for a keycap.
+
+So they are drawn now, in `qml/DrawnIcon.qml`: one 24-unit grid, one stroke
+weight, round caps and joins to match the keys' 5px corner radius. Every path's
+bounding box is centred on (12, 12) by arithmetic and checked by a parser rather
+than by eye, because half a grid unit is a visible pixel here. The residual
+1 physical pixel on shift and erase is the antialiased apex of a pointed shape
+falling under the measurement threshold, not the drawing.
+
+Two things this turned up that were not the point:
+
+- **The icon size depended on the key's width.** Sizing on `min(width, height)`
+  looks like the safe choice and quietly made the icons on 1.5-wide keys 12 %
+  bigger than the ones beside them, because a 1-wide key is narrower than it is
+  tall and a 1.5-wide key is not. Sizing on height alone makes every icon on the
+  keyboard the same size.
+- **Text was centred on its box, not on its letters.** A `Text` item's box is
+  ascent + descent -- 1.069 em over 0.293 for Noto Sans -- so centring it leaves
+  the letters low by the room reserved for descenders they may not have. The
+  band from baseline to cap height is what the eye reads as the text, so that is
+  what is centred now: -0.40px at 13px, -0.59px at 19px. Deliberately a function
+  of the font and never of the string, because centring each label on its own
+  ink would let "q" ride up to balance its descender and break the row's
+  baseline.
+
+Omarchy's own icon font was the first thing checked, and it does not help: its
+eight glyphs are the logo, a llama, a cloud and five other brand marks. There
+are no keyboard icons in it.
+
 ## Proving a refactor changed nothing, on a harness that disagrees with itself
 
 Giving the key spec a real type rewrote how every label, colour, width and

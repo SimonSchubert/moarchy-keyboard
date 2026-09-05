@@ -18,6 +18,41 @@ KeyType::Kind typeFor(const QString &spelling)
     return KeyType::Unknown;
 }
 
+// The characters the layouts label these keys with. Kept as the source of
+// truth so an existing layout -- including a user's -- gets the drawn icons
+// with no edit at all; `"icon": "enter"` says the same thing explicitly, and
+// `"icon": "none"` opts out and draws the character as text.
+KeyIcon::Kind iconForLabel(const QString &label)
+{
+    if (label.size() != 1)
+        return KeyIcon::NoIcon;
+    switch (label.at(0).unicode()) {
+    case 0x21B5: return KeyIcon::Enter;       // U+21B5 RETURN
+    case 0x232B: return KeyIcon::Backspace;   // U+232B ERASE TO THE LEFT
+    case 0x21E7: return KeyIcon::Shift;       // U+21E7 UPWARDS WHITE ARROW
+    case 0x2190: return KeyIcon::ArrowLeft;
+    case 0x2192: return KeyIcon::ArrowRight;
+    case 0x2191: return KeyIcon::ArrowUp;
+    case 0x2193: return KeyIcon::ArrowDown;
+    default:     return KeyIcon::NoIcon;
+    }
+}
+
+KeyIcon::Kind iconFor(const QString &spelling, bool *known)
+{
+    *known = true;
+    if (spelling == QLatin1String("none"))      return KeyIcon::NoIcon;
+    if (spelling == QLatin1String("enter"))     return KeyIcon::Enter;
+    if (spelling == QLatin1String("backspace")) return KeyIcon::Backspace;
+    if (spelling == QLatin1String("shift"))     return KeyIcon::Shift;
+    if (spelling == QLatin1String("left"))      return KeyIcon::ArrowLeft;
+    if (spelling == QLatin1String("right"))     return KeyIcon::ArrowRight;
+    if (spelling == QLatin1String("up"))        return KeyIcon::ArrowUp;
+    if (spelling == QLatin1String("down"))      return KeyIcon::ArrowDown;
+    *known = false;
+    return KeyIcon::NoIcon;
+}
+
 KeyModifier::Kind modifierFor(const QString &spelling)
 {
     if (spelling == QLatin1String("shift")) return KeyModifier::Shift;
@@ -54,6 +89,17 @@ KeySpec parseKey(const QJsonObject &object, QStringList *problems)
 
     key.m_glyph = object.value(QLatin1String("glyph")).toString();
     key.m_iconFont = object.value(QLatin1String("font")).toString() == QLatin1String("omarchy");
+
+    // An explicit `icon` wins; otherwise the label says which one.
+    if (object.contains(QLatin1String("icon"))) {
+        bool known = false;
+        const QString spelling = object.value(QLatin1String("icon")).toString();
+        key.m_icon = iconFor(spelling, &known);
+        if (!known)
+            problems->append(QStringLiteral("unknown icon \"%1\"").arg(spelling));
+    } else {
+        key.m_icon = iconForLabel(key.m_label);
+    }
 
     const QJsonArray alternates = object.value(QLatin1String("alt")).toArray();
     key.m_alt.reserve(alternates.size());
