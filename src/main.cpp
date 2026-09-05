@@ -9,6 +9,7 @@
 
 #include <QCommandLineParser>
 #include <QDir>
+#include <QColor>
 #include <QFile>
 #include <QGuiApplication>
 #include <QLoggingCategory>
@@ -86,7 +87,69 @@ int main(int argc, char *argv[])
         QStringLiteral("dir"));
     parser.addOption(checkThemesOption);
 
+    QCommandLineOption checkContrastOption(
+        QStringList { QStringLiteral("check-contrast") },
+        QStringLiteral("Check one colour pair: --check-contrast '<fg>,<bg>[,<alpha>]', "
+                       "e.g. '#cdd6f4,#313244,0.7'. Alpha composites the foreground "
+                       "over the background first, which is where most near-misses "
+                       "come from. Needs no compositor."),
+        QStringLiteral("fg,bg[,alpha]"));
+    parser.addOption(checkContrastOption);
+
+    QCommandLineOption roleOption(
+        QStringList { QStringLiteral("role") },
+        QStringLiteral("With --check-themes, measure one arbitrary pair of theme "
+                       "roles across every theme instead of the keyboard's own: "
+                       "--role 'foreground,lighter_background,0.7'. Role names are "
+                       "colors.toml keys."),
+        QStringLiteral("fgRole,bgRole[,alpha]"));
+    parser.addOption(roleOption);
+
     parser.process(app);
+
+    if (parser.isSet(checkContrastOption)) {
+        const QStringList parts = parser.value(checkContrastOption).split(QLatin1Char(','));
+        QTextStream out(stdout);
+        if (parts.size() < 2) {
+            QTextStream(stderr) << "expected <fg>,<bg>[,<alpha>]\n";
+            return 2;
+        }
+
+        QColor foreground(parts.at(0).trimmed());
+        const QColor background(parts.at(1).trimmed());
+        if (!foreground.isValid() || !background.isValid()) {
+            QTextStream(stderr) << "could not parse those colours\n";
+            return 2;
+        }
+
+        double alpha = 1.0;
+        if (parts.size() >= 3) {
+            bool ok = false;
+            alpha = parts.at(2).trimmed().toDouble(&ok);
+            if (!ok || alpha < 0.0 || alpha > 1.0) {
+                QTextStream(stderr) << "alpha must be between 0 and 1\n";
+                return 2;
+            }
+            // Composite before measuring. A translucent foreground is NOT the
+            // colour you wrote -- it is that colour mixed with whatever is
+            // behind it, and on a raised card that is a lighter surface than
+            // the base background, which quietly eats the contrast margin.
+            foreground = Theme::composite(foreground, background, alpha);
+        }
+
+        const double ratio = Theme::contrastOf(foreground, background);
+        out << QStringLiteral("%1 on %2%3  ->  %4:1  %5\n")
+                   .arg(foreground.name(),
+                        background.name(),
+                        alpha < 1.0 ? QStringLiteral(" (alpha %1, composited to %2)")
+                                          .arg(alpha).arg(foreground.name())
+                                    : QString(),
+                        QString::number(ratio, 'f', 2),
+                        ratio >= 4.5 ? QStringLiteral("PASS (AA normal text)")
+                                     : ratio >= 3.0 ? QStringLiteral("AA large text only")
+                                                    : QStringLiteral("FAIL"));
+        return ratio >= 4.5 ? 0 : 1;
+    }
 
     if (parser.isSet(checkThemesOption)) {
         const QString root = parser.value(checkThemesOption);
@@ -111,7 +174,26 @@ int main(int argc, char *argv[])
             theme.loadOnce(path);
             ++checked;
 
-            const QVariantMap report = theme.contrastReport();
+            QVariantMap report;
+            if (parser.isSet(roleOption)) {
+                const QStringList parts = parser.value(roleOption).split(QLatin1Char(','));
+                if (parts.size() < 2) {
+                    QTextStream(stderr) << "--role wants <fgRole>,<bgRole>[,alpha]\n";
+                    return 2;
+                }
+                const QColor bg = theme.roleColor(parts.at(1).trimmed());
+                QColor fg = theme.roleColor(parts.at(0).trimmed());
+                if (!fg.isValid() || !bg.isValid()) {
+                    out << QStringLiteral("SKIP %1  (theme has no %2 or %3)\n")
+                               .arg(name.leftJustified(20), parts.at(0), parts.at(1));
+                    continue;
+                }
+                if (parts.size() >= 3)
+                    fg = Theme::composite(fg, bg, parts.at(2).trimmed().toDouble());
+                report.insert(parser.value(roleOption), Theme::contrastOf(fg, bg));
+            } else {
+                report = theme.contrastReport();
+            }
             QStringList failures;
             double worst = 99.0;
             for (auto it = report.constBegin(); it != report.constEnd(); ++it) {
@@ -122,7 +204,7 @@ int main(int argc, char *argv[])
                                         .arg(it.key()).arg(ratio, 0, 'f', 2));
             }
 
-            const int rescued = theme.contrastFallbacks();
+            const int rescued = parser.isSet(roleOption) ? 0 : theme.contrastFallbacks();
             if (rescued > 0)
                 ++rescuedThemes;
 

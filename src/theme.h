@@ -81,6 +81,19 @@ public:
     // already fine; anything higher means the fallback is load-bearing for it.
     int contrastFallbacks() const { return m_contrastFallbacks; }
 
+    // Exposed for --check-contrast, so anything else in mobileomarchy can check
+    // a colour pair against the same maths the keyboard uses rather than a
+    // second implementation that might round differently.
+    static double contrastOf(const QColor &a, const QColor &b) { return contrastRatio(a, b); }
+    static QColor composite(const QColor &foreground, const QColor &background, double alpha);
+
+    // The palette exactly as colors.toml declared it, before any of this
+    // class's role mapping. Lets --check-themes measure an arbitrary pair of
+    // theme roles, which is what anything else drawing on an Omarchy surface
+    // actually needs -- checking one theme and assuming the other 21 is how a
+    // subtitle ends up illegible on half the phone.
+    QColor roleColor(const QString &key) const;
+
     QString name() const { return m_name; }
     bool isDark() const { return m_dark; }
 
@@ -111,6 +124,7 @@ private:
     QFileSystemWatcher *m_watcher = nullptr;
     QTimer *m_debounce = nullptr;
 
+    QHash<QString, QString> m_raw;
     QString m_name;
     bool m_dark = true;
     QColor m_panelBackground;

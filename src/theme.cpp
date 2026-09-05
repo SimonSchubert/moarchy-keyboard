@@ -152,6 +152,23 @@ double Theme::contrastRatio(const QColor &a, const QColor &b)
     return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
 }
 
+QColor Theme::roleColor(const QString &key) const
+{
+    return QColor(m_raw.value(key));
+}
+
+QColor Theme::composite(const QColor &foreground, const QColor &background, double alpha)
+{
+    // Straight source-over. Contrast has to be measured on what is actually
+    // drawn, and a translucent foreground is never the colour it was written
+    // as -- which is why an alpha that reads fine on the base background can
+    // fail on a raised card a few percent lighter.
+    return QColor::fromRgbF(
+        background.redF()   + (foreground.redF()   - background.redF())   * alpha,
+        background.greenF() + (foreground.greenF() - background.greenF()) * alpha,
+        background.blueF()  + (foreground.blueF()  - background.blueF())  * alpha);
+}
+
 QColor Theme::readableOn(const QColor &desired, const QColor &background)
 {
     if (contrastRatio(desired, background) >= kMinimumContrast)
@@ -205,6 +222,8 @@ void Theme::reload()
         qCWarning(lcTheme) << "could not read" << m_colorsPath
                            << "-- falling back to the built-in palette";
     }
+
+    m_raw = values;
 
     auto colorFor = [&values](const QString &key, const char *fallback) {
         const QColor parsed(values.value(key));
