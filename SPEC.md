@@ -3,8 +3,10 @@
 An on-screen keyboard for the PinePhone running mobileomarchy: Qt6 + QML, themed
 from Omarchy's palette, rendered on the Mali-400.
 
-Status: **draft, awaiting sign-off.** No code until the acceptance criteria below
-are agreed. Numbers in §6 are targets to be met, not measurements.
+Status: **agreed and built.** The acceptance criteria below are the contract;
+[RESULTS.md](RESULTS.md) records which are met, with the measurement behind each.
+Numbers here are targets, not measurements — where one turned out to be wrong,
+RESULTS.md says so rather than this file being quietly edited to match.
 
 ---
 
@@ -314,20 +316,30 @@ own layout happens to be.
 
 ---
 
-## 6. Open questions
+## 6. Open questions — answered by default
 
-1. **Haptics.** squeekboard depends on `feedbackd` for key vibration. The phone
-   has a vibrator. Worth having, and worth the dependency?
-2. **Height.** ~40% of a 720-logical-tall screen is ~230 px for 4 rows plus a
-   function row. Fixed, or user-settable?
-3. **Number row.** Always-present top row, or reached through long-press and the
-   symbol layout? Costs a row of height either way it's answered.
-4. **`Style.qml` parity.** The shell derives spacing, radius and type scale from
-   the theme's `shell.toml`. Should the keyboard read that too, so corner
-   rounding matches the drawer, or keep its own geometry?
-5. **Landscape.** Confirmed out of scope, or wanted once rotation exists?
+These went unanswered when work started, so rather than block, each was decided
+with a default and built. All five are cheap to change; none is load-bearing.
 
----
+1. **Haptics.** *Not built.* squeekboard pulled in `feedbackd` for key vibration
+   and the phone has a vibrator, but it is a new runtime dependency for a
+   preference, and a keyboard that buzzes is a keyboard that drains. Easy to add
+   later behind a setting.
+2. **Panel height.** *300 of the 720 logical pixels*, ~42%, which is where
+   Android and iOS both sit on a phone this shape. Four rows plus a function row
+   on the terminal layout; four rows elsewhere. One constant in `src/panel.cpp`.
+3. **Number row.** *Not always present.* Digits live behind a long-press on the
+   top letter row and on the symbols layout, the Android convention. An
+   always-present number row costs a fifth of the panel height, and on a screen
+   this size that comes out of the app.
+4. **Reading the theme's `shell.toml` for radius and spacing.** *No.* The
+   keyboard keeps its own geometry. `shell.toml` describes bar and menu chrome —
+   `size-horizontal`, control borders, a typographic scale — and none of it maps
+   onto a key grid whose proportions are set by thumbs, not by type. Colour is
+   the part of a theme a keyboard should follow, and colour comes from
+   `colors.toml`.
+5. **Landscape.** *Confirmed out of scope*, per §2. The phone runs portrait and
+   mobileomarchy has no rotation handling to hook into.
 
 ## 7. How this gets verified
 
