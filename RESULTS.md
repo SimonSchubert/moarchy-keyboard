@@ -10,9 +10,9 @@ it; everything unproven says so.
 
 | | count |
 |---|---|
-| Passed | 21 |
+| Passed | 22 |
 | Failed | 1 |
-| Partial | 4 |
+| Partial | 3 |
 | Not yet verified | 18 |
 
 The keyboard works: it raises itself, types into both kinds of client, themes
@@ -43,6 +43,7 @@ target, which was a number I picked without evidence — see below.
 | 37 | Idle CPU | 1 jiffy / 15 s shown (~0.07 % of one core), 7 / 15 s hidden |
 | 39 | **GPU, not llvmpipe** | 3 fds on `/dev/dri/renderD128`, same as the shell. `libLLVM` is mapped, but that is libgallium's unconditional link, not a software fallback — the fd is the real test |
 | 40 | Builds as a pacman package | `makepkg` (no `--nodeps`) → `moarchy-keyboard-0.1.0-1-aarch64.pkg.tar.xz`, 87 K, binary + 5 layouts |
+| 25 | **WCAG AA in every theme** | All **22** Omarchy themes pass, worst 4.64:1. Swept offline with `--check-themes`; reproducible via `scripts/fetch-themes.sh` |
 | 41 | Dependencies available | The same `makepkg` run validated the `depends` array against an Arch ARM image holding only `qt6-base`, `qt6-declarative`, `qt6-wayland`, `layer-shell-qt`, `wayland`, `libxkbcommon` |
 
 ## Failed
@@ -72,10 +73,6 @@ to the truth rather than the hope.
 
 - **AC 13** (terminal correctness) — Escape and Tab verified. **Ctrl+C and the
   arrow keys are not**, and Ctrl+C is the one that matters most.
-- **AC 25** (WCAG AA in every theme) — the fallback demonstrably fires and is
-  not theoretical: Catppuccin's `muted` (`#585b70`) scores **1.88:1** against its
-  `lighter_background` (`#313244`), far under AA, and gets replaced with white.
-  But only 4 of 22 themes have been through it. Needs the sweep in SPEC §7.
 - **AC 29** (no dead zones) — taps landed on the intended key including on the
   centred 9-key rows, which is the case the clamping exists for. Not swept.
 - **AC 2** — proven, but over 9 focus transitions rather than the 20 the AC asks
@@ -95,6 +92,28 @@ switching), 30 (multitouch), 31 (slide-off cancels), 32 (long-press alternates),
 untouched: two other sessions are editing that repo right now).
 
 `tests/acceptance.sh` covers all of these that hardware can answer, in one pass.
+
+## The contrast fallback is load-bearing, not a safety net
+
+Worth stating plainly because it surprised me: **all 22 themes need it.** Every
+single Omarchy palette has at least one role that cannot be drawn legibly on the
+fill the keyboard puts it on — almost always the long-press hint, `muted` on
+`lighter_background`, which in Catppuccin scores **1.88:1** against a 4.5
+requirement.
+
+That changed the design. The first version substituted pure black or white,
+which is fine as an emergency measure and wrong as the common case: it made the
+deliberately-quiet hints shout in white on every theme, and threw away the
+palette's hue to fix a shortfall that was often tiny. It now walks the colour
+toward the contrasting extreme and stops the moment it clears AA:
+
+| theme | role | was | becomes | ratio |
+|---|---|---|---|---|
+| catppuccin | hint on key fill | `#585b70` (1.88:1) | `#9b9da9` | 4.65:1 |
+| catppuccin-latte | accent text on accent | `#eff1f5` (4.34:1) | `#f4f5f8` | 4.51:1 |
+
+A theme that was nearly legible barely moves and keeps its hue; one that was
+hopeless still ends up where the old code started.
 
 ## Fixed since the first run
 

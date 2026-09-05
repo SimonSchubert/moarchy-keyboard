@@ -22,6 +22,64 @@ restart() {
   sleep 4
 }
 kbpid() { pgrep -x moarchy-keyboar | head -1; }
+
+# Leave the compositor with a real WINDOW focused, not merely a workspace.
+#
+# `swaymsg workspace N` reaches the workspace and does not necessarily land
+# focus on anything inside it, and the resulting state -- workspace focused, no
+# window focused -- is actively harmful rather than untidy: in it,
+# `swaymsg '[app_id=...] focus'` returns success and changes nothing, and no
+# toplevel reports itself activated over wlr-foreign-toplevel. That breaks the
+# next test as surely as it breaks anyone else's, and this suite spends its time
+# driving exactly the focus transitions that produce it.
+restore_focus() {
+  local id
+  id=$(swaymsg -t get_tree | python3 -c '
+import json, sys
+best = None
+def walk(node):
+    global best
+    if node.get("type") == "con" and node.get("pid") and not node.get("nodes"):
+        if best is None:
+            best = node["id"]
+    for kid in node.get("nodes", []) + node.get("floating_nodes", []):
+        walk(kid)
+walk(json.load(sys.stdin))
+print(best if best else "")')
+
+  if [[ -z $id ]]; then
+    echo "  (no window to focus -- leaving focus alone)"
+    return
+  fi
+
+  swaymsg "[con_id=$id] focus" >/dev/null 2>&1
+  sleep 0.5
+
+  local focused
+  focused=$(swaymsg -t get_tree | python3 -c '
+import json, sys
+def walk(node):
+    if node.get("focused") and node.get("pid"): print(node["id"])
+    for kid in node.get("nodes", []) + node.get("floating_nodes", []): walk(kid)
+walk(json.load(sys.stdin))')
+
+  if [[ $focused == "$id" ]]; then
+    echo "  focus restored to window $id"
+  else
+    echo "  WARNING: asked for window $id, focused is '${focused:-none}'" >&2
+  fi
+}
+
+# Whatever happens -- including a failed assertion or a Ctrl-C -- hand the
+# device back in a sane state.
+cleanup() {
+  swaymsg "[app_id=moa-kbdtest] kill" >/dev/null 2>&1
+  swaymsg "[app_id=moa-htop] kill"    >/dev/null 2>&1
+  swaymsg "[app_id=moa-focus] kill"   >/dev/null 2>&1
+  restore_focus
+  echo "  (run /tmp/moa-restore-squeekboard.sh to hand the OSK back)"
+}
+trap cleanup EXIT
 visible() { busctl --user get-property sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 Visible 2>/dev/null; }
 since()  { date "+%Y-%m-%d %H:%M:%S"; }
 log()    { journalctl --since "$1" --no-pager 2>/dev/null | grep "moarchy-keyboard\["; }
@@ -163,7 +221,7 @@ C=$(grep -c "get_layer_surface" /tmp/moa-wl20.log)
 D=$(grep -c "zwlr_layer_surface_v1#[0-9]*\.destroy" /tmp/moa-wl20.log)
 echo "  activates=$A  layer surfaces created=$C  destroyed=$D"
 if [[ $C -eq 1 && $D -eq 0 ]]; then ok "AC 2 ($A cycles, 1 surface, 0 destroys)"; else no "AC 2 (created $C, destroyed $D)"; fi
-swaymsg "workspace 1" >/dev/null 2>&1
+restore_focus
 
 echo
 echo "=============================================================="

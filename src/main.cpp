@@ -9,6 +9,7 @@
 
 #include <QCommandLineParser>
 #include <QDir>
+#include <QFile>
 #include <QGuiApplication>
 #include <QLoggingCategory>
 #include <QQmlContext>
@@ -77,7 +78,70 @@ int main(int argc, char *argv[])
                        "Needs no compositor."));
     parser.addOption(dumpKeymapOption);
 
+    QCommandLineOption checkThemesOption(
+        QStringList { QStringLiteral("check-themes") },
+        QStringLiteral("Walk <dir>/*/colors.toml, report WCAG contrast for every "
+                       "text-on-fill pair, and exit non-zero if any falls under "
+                       "AA. Needs no compositor."),
+        QStringLiteral("dir"));
+    parser.addOption(checkThemesOption);
+
     parser.process(app);
+
+    if (parser.isSet(checkThemesOption)) {
+        const QString root = parser.value(checkThemesOption);
+        QTextStream out(stdout);
+
+        QDir dir(root);
+        const QStringList themes = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+        if (themes.isEmpty()) {
+            QTextStream(stderr) << "no theme directories under " << root << "\n";
+            return 1;
+        }
+
+        int checked = 0;
+        int under = 0;
+        int rescuedThemes = 0;
+        for (const QString &name : themes) {
+            const QString path = dir.filePath(name) + QStringLiteral("/colors.toml");
+            if (!QFile::exists(path))
+                continue;
+
+            Theme theme;
+            theme.loadOnce(path);
+            ++checked;
+
+            const QVariantMap report = theme.contrastReport();
+            QStringList failures;
+            double worst = 99.0;
+            for (auto it = report.constBegin(); it != report.constEnd(); ++it) {
+                const double ratio = it.value().toDouble();
+                worst = qMin(worst, ratio);
+                if (ratio < 4.5)
+                    failures.append(QStringLiteral("%1 %2:1")
+                                        .arg(it.key()).arg(ratio, 0, 'f', 2));
+            }
+
+            const int rescued = theme.contrastFallbacks();
+            if (rescued > 0)
+                ++rescuedThemes;
+
+            out << QStringLiteral("%1 %2  worst %3:1  %4%5\n")
+                       .arg(failures.isEmpty() ? QStringLiteral("PASS") : QStringLiteral("FAIL"),
+                            name.leftJustified(20),
+                            QString::number(worst, 'f', 2),
+                            rescued > 0 ? QStringLiteral("(%1 role(s) fell back) ").arg(rescued)
+                                        : QString(),
+                            failures.join(QStringLiteral("; ")));
+            if (!failures.isEmpty())
+                ++under;
+        }
+
+        out << QStringLiteral("\n%1 themes checked, %2 under AA. "
+                              "%3 needed the contrast fallback to get there.\n")
+                   .arg(checked).arg(under).arg(rescuedThemes);
+        return under == 0 ? 0 : 1;
+    }
 
     if (parser.isSet(dumpKeymapOption)) {
         LayoutStore store;

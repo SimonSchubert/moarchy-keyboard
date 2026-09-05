@@ -6,6 +6,7 @@
 #include <QColor>
 #include <QHash>
 #include <QObject>
+#include <QVariantMap>
 #include <QString>
 
 class QFileSystemWatcher;
@@ -67,6 +68,19 @@ public:
     // path does not exist: the built-in palette is used until it appears.
     void start(const QString &colorsPath);
 
+    // Loads one palette with no watching, for offline checks.
+    void loadOnce(const QString &colorsPath);
+
+    // Contrast of every text-on-fill pair this theme will actually render,
+    // as { "label": ratio }. Used by --check-themes to sweep every Omarchy
+    // theme without a phone (AC 25).
+    QVariantMap contrastReport() const;
+
+    // How many roles this palette could not supply legibly, so readableOn()
+    // substituted black or white. Zero means the theme's own colours were
+    // already fine; anything higher means the fallback is load-bearing for it.
+    int contrastFallbacks() const { return m_contrastFallbacks; }
+
     QString name() const { return m_name; }
     bool isDark() const { return m_dark; }
 
@@ -90,8 +104,9 @@ private:
     static double relativeLuminance(const QColor &color);
     static double contrastRatio(const QColor &a, const QColor &b);
     // AC 25: no theme may render text on a fill it cannot be read against.
-    static QColor readableOn(const QColor &desired, const QColor &background);
+    QColor readableOn(const QColor &desired, const QColor &background);
 
+    int m_contrastFallbacks = 0;
     QString m_colorsPath;
     QFileSystemWatcher *m_watcher = nullptr;
     QTimer *m_debounce = nullptr;

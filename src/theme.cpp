@@ -24,6 +24,10 @@ constexpr const char *kFallbackMuted = "#585b70";
 constexpr const char *kFallbackSelection = "#45475a";
 constexpr const char *kFallbackAccent = "#89b4fa";
 
+// WCAG AA for normal-size text. Applied to every text-on-fill pair the keyboard
+// draws, hints included: a hint you cannot read is not subtle, it is absent.
+constexpr double kMinimumContrast = 4.5;
+
 } // namespace
 
 Theme::Theme(QObject *parent)
@@ -50,6 +54,29 @@ void Theme::start(const QString &colorsPath)
 
     rearmWatch();
     reload();
+}
+
+void Theme::loadOnce(const QString &colorsPath)
+{
+    m_colorsPath = colorsPath;
+    reload();
+}
+
+QVariantMap Theme::contrastReport() const
+{
+    // Every pair that actually gets drawn. A role that is never rendered on a
+    // given fill does not belong here -- a report full of pairs the program
+    // cannot produce would fail themes for no reason.
+    QVariantMap report;
+    report.insert(QStringLiteral("key text on key fill"),
+                  contrastRatio(m_keyText, m_keyFill));
+    report.insert(QStringLiteral("modifier text on modifier fill"),
+                  contrastRatio(m_modifierText, m_modifierFill));
+    report.insert(QStringLiteral("accent text on accent"),
+                  contrastRatio(m_accentText, m_accent));
+    report.insert(QStringLiteral("long-press hint on key fill"),
+                  contrastRatio(m_keyHint, m_keyFill));
+    return report;
 }
 
 void Theme::rearmWatch()
@@ -127,26 +154,50 @@ double Theme::contrastRatio(const QColor &a, const QColor &b)
 
 QColor Theme::readableOn(const QColor &desired, const QColor &background)
 {
-    if (contrastRatio(desired, background) >= 4.5)
+    if (contrastRatio(desired, background) >= kMinimumContrast)
         return desired;
 
-    // Some Omarchy themes are built for a bar and a terminal, where the
-    // foreground never lands on lighter_background. Rather than render a key
-    // legend that cannot be read, fall back to whichever of black or white
-    // works against this fill.
-    const QColor white(Qt::white);
-    const QColor black(Qt::black);
-    const QColor best = contrastRatio(white, background) >= contrastRatio(black, background)
-                      ? white : black;
+    ++m_contrastFallbacks;
+
+    // Every one of the 22 Omarchy themes trips this for at least one role, so
+    // it is load-bearing rather than a safety net for odd themes. Which is
+    // exactly why it must not be a sledgehammer: substituting pure black or
+    // white made the long-press hints -- deliberately quiet, small, secondary
+    // -- shout in white on every single theme, and threw the palette's hue away
+    // to fix a legibility problem the palette was only slightly short of.
+    //
+    // So walk the colour toward whichever extreme this background contrasts
+    // with, and stop the moment it clears AA. A theme that was nearly legible
+    // moves barely at all and keeps its hue; one that was hopeless ends up at
+    // the extreme, which is where the old code started.
+    const QColor target = contrastRatio(Qt::white, background)
+                              >= contrastRatio(Qt::black, background)
+                          ? QColor(Qt::white) : QColor(Qt::black);
+
+    QColor best = target;                      // guaranteed-legible fallback
+    for (int step = 1; step <= 20; ++step) {
+        const double t = step / 20.0;
+        const QColor blended = QColor::fromRgbF(
+            desired.redF()   + (target.redF()   - desired.redF())   * t,
+            desired.greenF() + (target.greenF() - desired.greenF()) * t,
+            desired.blueF()  + (target.blueF()  - desired.blueF())  * t);
+        if (contrastRatio(blended, background) >= kMinimumContrast) {
+            best = blended;
+            break;
+        }
+    }
 
     qCDebug(lcTheme) << "contrast" << contrastRatio(desired, background)
                      << "too low for" << desired.name() << "on" << background.name()
-                     << "-> using" << best.name();
+                     << "-> nudged to" << best.name()
+                     << "at" << contrastRatio(best, background);
     return best;
 }
 
 void Theme::reload()
 {
+    m_contrastFallbacks = 0;
+
     bool ok = false;
     const QHash<QString, QString> values = parseFlatToml(m_colorsPath, &ok);
 
