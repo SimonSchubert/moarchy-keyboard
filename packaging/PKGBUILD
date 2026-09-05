@@ -12,7 +12,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="Themed on-screen keyboard for mobileomarchy (Qt6/QML, input-method-v2)"
 arch=('aarch64')
-url="https://github.com/simonschubert/moarchy-keyboard"
+url="https://github.com/SimonSchubert/moarchy-keyboard"
 license=('custom')
 
 depends=(

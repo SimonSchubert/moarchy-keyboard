@@ -1,7 +1,7 @@
 # moarchy-keyboard
 
 An on-screen keyboard for the PinePhone running
-[mobileomarchy](../mobileomarchy): Qt6 + QML, themed live from Omarchy's
+[mobileomarchy](https://github.com/SimonSchubert/mobileomarchy): Qt6 + QML, themed live from Omarchy's
 palette, rendered on the Mali-400.
 
 It replaces squeekboard, which behaves correctly but ignores the theme and draws
