@@ -1,10 +1,9 @@
 #include "layoutstore.h"
 
+#include "layoutparser.h"
+
 #include <QDir>
 #include <QFile>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonParseError>
 #include <QLoggingCategory>
 #include <QSet>
 #include <QStandardPaths>
@@ -14,96 +13,104 @@ Q_LOGGING_CATEGORY(lcLayouts, "moarchy.layouts")
 LayoutStore::LayoutStore(QObject *parent)
     : QObject(parent)
 {
-    reload();
-}
-
-QStringList LayoutStore::searchPaths() const
-{
-    return {
+    m_searchPaths = {
         QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
             + QStringLiteral("/moarchy-keyboard/layouts"),
         QStringLiteral(MOARCHY_DATADIR "/moarchy-keyboard/layouts"),
         QStringLiteral(":/layouts"),
     };
+    reload();
 }
 
 void LayoutStore::reload()
 {
-    m_cache.clear();
+    m_layouts.clear();
+    m_problems.clear();
     m_names.clear();
 
-    QStringList seen;
-    for (const QString &directory : searchPaths()) {
+    // Which file each name resolves to. First path wins, so a user layout
+    // shadows the shipped one of the same name rather than merging with it --
+    // and, just as importantly, a BROKEN user layout does not silently fall
+    // through to the shipped one. An edit that looks like it did nothing is
+    // worse than an edit that says why it failed (AC 19).
+    QStringList names;
+    QHash<QString, QString> paths;
+    for (const QString &directory : std::as_const(m_searchPaths)) {
         QDir dir(directory);
         if (!dir.exists())
             continue;
-        for (const QFileInfo &info : dir.entryInfoList({ QStringLiteral("*.json") }, QDir::Files)) {
+        for (const QFileInfo &info :
+             dir.entryInfoList({ QStringLiteral("*.json") }, QDir::Files)) {
             const QString name = info.completeBaseName();
-            // First path wins, so a user layout shadows the shipped one of the
-            // same name rather than merging with it.
-            if (seen.contains(name))
+            if (paths.contains(name))
                 continue;
-            seen.append(name);
+            paths.insert(name, info.absoluteFilePath());
+            names.append(name);
         }
     }
 
-    m_names = seen;
-    m_names.sort();
+    names.sort();
+    m_names = names;
+
+    // Parsed here rather than on first use. Nothing is loaded lazily in
+    // practice anyway -- main() calls allCharacters() before the QML engine
+    // exists, to compile the keymap from every character the layouts declare --
+    // and parsing once, up front, is what lets layout() be a const lookup
+    // cheap enough for a QML binding to call.
+    for (const QString &name : std::as_const(m_names)) {
+        QFile file(paths.value(name));
+        QStringList problems;
+        if (!file.open(QIODevice::ReadOnly)) {
+            problems.append(QStringLiteral("could not be opened"));
+            qCWarning(lcLayouts) << "cannot read" << paths.value(name);
+            m_problems.insert(name, problems);
+            m_layouts.insert(name, LayoutSpec {});
+            continue;
+        }
+
+        const LayoutSpec spec = LayoutParser::parse(file.readAll(), name, &problems);
+        if (!problems.isEmpty()) {
+            qCWarning(lcLayouts).noquote()
+                << paths.value(name) << "--" << problems.join(QLatin1String("; "));
+        }
+        m_layouts.insert(name, spec);
+        m_problems.insert(name, problems);
+        qCDebug(lcLayouts) << "loaded" << name << "from" << paths.value(name)
+                           << "--" << spec.rows().size() << "rows";
+    }
+
     Q_EMIT changed();
 }
 
-QVariantMap LayoutStore::layout(const QString &name)
+LayoutSpec LayoutStore::layout(const QString &name) const
 {
-    const auto cached = m_cache.constFind(name);
-    if (cached != m_cache.constEnd())
-        return *cached;
-
-    for (const QString &directory : searchPaths()) {
-        const QString path = directory + QLatin1Char('/') + name + QStringLiteral(".json");
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly))
-            continue;
-
-        QJsonParseError parseError {};
-        const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
-        if (parseError.error != QJsonParseError::NoError) {
-            // Do not fall through to the next path on a parse error: a user
-            // layout that is broken should say so, not silently resurrect the
-            // shipped one and leave the edit looking like it did nothing.
-            qCWarning(lcLayouts) << path << "is not valid JSON:" << parseError.errorString()
-                                 << "at offset" << parseError.offset;
-            return {};
-        }
-
-        const QVariantMap parsed = document.object().toVariantMap();
-        m_cache.insert(name, parsed);
-        qCDebug(lcLayouts) << "loaded" << name << "from" << path;
-        return parsed;
-    }
+    const auto found = m_layouts.constFind(name);
+    if (found != m_layouts.constEnd())
+        return *found;
 
     qCWarning(lcLayouts) << "no layout named" << name << "on any search path";
     return {};
 }
 
-QStringList LayoutStore::allCharacters()
+QStringList LayoutStore::problems(const QString &name) const
+{
+    return m_problems.value(name);
+}
+
+QStringList LayoutStore::allCharacters() const
 {
     QSet<QString> found;
 
     for (const QString &name : m_names) {
-        const QVariantMap parsed = layout(name);
-        for (const QVariant &rowValue : parsed.value(QStringLiteral("rows")).toList()) {
-            const QVariantMap row = rowValue.toMap();
-            for (const QVariant &keyValue : row.value(QStringLiteral("keys")).toList()) {
-                const QVariantMap key = keyValue.toMap();
+        const LayoutSpec spec = m_layouts.value(name);
+        for (const KeyRowSpec &row : spec.rows()) {
+            for (const KeySpec &key : row.keys()) {
+                if (key.text().size() == 1)
+                    found.insert(key.text());
 
-                const QString text = key.value(QStringLiteral("text")).toString();
-                if (text.size() == 1)
-                    found.insert(text);
-
-                for (const QVariant &alt : key.value(QStringLiteral("alt")).toList()) {
-                    const QString value = alt.toString();
-                    if (value.size() == 1)
-                        found.insert(value);
+                for (const QString &alternate : key.alt()) {
+                    if (alternate.size() == 1)
+                        found.insert(alternate);
                 }
             }
         }

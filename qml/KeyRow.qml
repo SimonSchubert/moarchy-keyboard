@@ -13,19 +13,21 @@ import moarchy
 Item {
     id: root
 
-    required property var keys
+    required property keyrow row
     required property real unit
     required property bool shifted
-    // { shift, ctrl, alt } -> 0 off, 1 latched for one key, 2 locked.
-    required property var modifierStates
+    // 0 off, 1 latched for one key, 2 locked. Three ints rather than one map,
+    // so that a modifier press only dirties the keys that care -- see the note
+    // on them in KeyCap.qml.
+    required property int shiftState
+    required property int ctrlState
+    required property int altState
     required property string iconFamily
 
-    readonly property real strips: {
-        var total = 0
-        for (var i = 0; i < keys.length; ++i)
-            total += keys[i].width !== undefined ? keys[i].width : 1
-        return total
-    }
+    // The row's total width in key-widths used to be computed here, by an
+    // interpreted loop over every key, on every layout switch -- into a
+    // property that nothing ever read. It is `row.units` now, measured once by
+    // the parser, and read by nobody, which is at least honest.
 
     function clearPressed() {
         for (var i = 0; i < strip.children.length; ++i) {
@@ -52,14 +54,16 @@ Item {
         spacing: 0
 
         Repeater {
-            model: root.keys
+            model: root.row.keys
             delegate: KeyCap {
-                required property var modelData
+                required property keyspec modelData
                 spec: modelData
                 shifted: root.shifted
-                modifierStates: root.modifierStates
+                shiftState: root.shiftState
+                ctrlState: root.ctrlState
+                altState: root.altState
                 iconFamily: root.iconFamily
-                width: root.unit * (modelData.width !== undefined ? modelData.width : 1)
+                width: root.unit * modelData.width
                 height: strip.height
             }
         }

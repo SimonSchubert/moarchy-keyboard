@@ -1,5 +1,6 @@
 #pragma once
 
+#include "keyspec.h"
 #include "qmlsingleton.h"
 
 #include <QQmlEngine>
@@ -9,7 +10,6 @@
 #include <QUrl>
 #include <QObject>
 #include <QStringList>
-#include <QVariantMap>
 
 // Layouts are data, not code (AC 18): one JSON file each, looked up in
 //
@@ -59,27 +59,42 @@ public:
     QUrl iconFontUrl() const;
     void setInitialLayout(const QString &name) { m_initialLayout = name; }
 
-    // The parsed layout, or an empty map with a warning logged. QML asks for
-    // these by name; there is no separate id space.
-    Q_INVOKABLE QVariantMap layout(const QString &name);
+    // The parsed layout, or a default LayoutSpec -- whose `valid` is false and
+    // whose `rows` are empty -- with a warning logged. QML asks for these by
+    // name; there is no separate id space.
+    //
+    // Cheap enough to call from a binding, which the QVariantMap version was
+    // not: a gadget is wrapped lazily by the QML engine rather than
+    // deep-converted into a fresh JavaScript object graph on every call.
+    Q_INVOKABLE LayoutSpec layout(const QString &name) const;
+
+    // What LayoutParser had to say about a layout's format. Not Q_INVOKABLE:
+    // this is for --check-layouts, and QML has no use for it.
+    QStringList problems(const QString &name) const;
 
     void reload();
 
     // Every distinct single-character string any loaded layout can emit,
     // including long-press alternates. VirtualKeyboard compiles a keymap that
     // covers these, so none of them is text-path-only.
-    QStringList allCharacters();
+    //
+    // Deliberately NOT including KeySpec::shiftedText: only `text` and `alt`
+    // have ever contributed, and adding the uppercase forms would change the
+    // generated keymap's tail -- which is exactly the reproducibility the sort
+    // inside it exists to guarantee.
+    QStringList allCharacters() const;
 
 Q_SIGNALS:
     void changed();
 
 private:
-    QStringList searchPaths() const;
-
     QString m_initialLayout = QStringLiteral("letters");
+    // Computed once in the constructor. It was rebuilt on every layout()
+    // call, which meant a QStandardPaths lookup per lookup.
+    QStringList m_searchPaths;
     QStringList m_names;
-    QHash<QString, QVariantMap> m_cache;
-
+    QHash<QString, LayoutSpec> m_layouts;
+    QHash<QString, QStringList> m_problems;
 };
 
 // See MainOwnedSingleton in qmlsingleton.h: a default-constructible

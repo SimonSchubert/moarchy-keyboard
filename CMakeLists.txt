@@ -72,6 +72,9 @@ qt_add_executable(moarchy-keyboard
   src/oskservice.cpp
   src/panel.cpp
   src/layoutstore.cpp
+  src/layoutparser.cpp
+  # Listed so AUTOMOC sees its Q_GADGETs and Q_NAMESPACEs; it has no .cpp.
+  src/keyspec.h
   ${PROTOCOL_SOURCES}
 )
 

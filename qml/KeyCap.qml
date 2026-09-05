@@ -12,11 +12,27 @@ import moarchy
 Item {
     id: root
 
-    required property var spec
+    // Typed, not `var`, and that is the point rather than a tidy-up. qmllint
+    // can resolve a field on a keyspec and cannot resolve one on a var; on this
+    // program an unresolvable name becomes undefined, an undefined assigned to
+    // a color is #000000, and the result is a black glyph on a black key with
+    // nothing logged. Every default below was applied once by LayoutParser, so
+    // there is no `!== undefined` left to get wrong.
+    required property keyspec spec
     required property bool shifted
-    required property var modifierStates
     required property string iconFamily
     property bool pressed: false
+
+    // The three modifier states arrive separately rather than as one object.
+    // A single `modifierStates` map was rebuilt on every modifier press, so
+    // every key on the panel saw a changed property and re-evaluated this
+    // binding and the four below it. Read one at a time, a character key's
+    // binding returns at the first line and captures no dependency on any of
+    // them at all -- QML records what a binding actually read -- so pressing
+    // Ctrl now re-evaluates the Ctrl key, not all forty-five.
+    required property int shiftState
+    required property int ctrlState
+    required property int altState
 
     // 0 off, 1 latched for the next key only, 2 locked until pressed again.
     // Derived rather than assigned, because nothing was assigning it: a latched
@@ -24,41 +40,41 @@ Item {
     // "the next letter is capital" and "every letter is capital" invisible
     // (AC 34).
     readonly property int modifierState: {
-        if (keyType !== "modifier" || spec.modifier === undefined)
+        if (root.keyType !== KeyType.Modifier)
             return 0
-        var state = modifierStates[spec.modifier]
-        return state === undefined ? 0 : state
+        switch (root.spec.modifier) {
+        case KeyModifier.Shift: return root.shiftState
+        case KeyModifier.Ctrl:  return root.ctrlState
+        case KeyModifier.Alt:   return root.altState
+        }
+        return 0
     }
     readonly property bool latched: modifierState > 0
     readonly property bool locked: modifierState === 2
 
-    readonly property string keyType: spec.type !== undefined ? spec.type : "character"
-    readonly property bool isSpace: keyType === "space"
-    readonly property bool isAccent: spec.accent === true
-    readonly property bool repeats: spec.repeats === true
-    readonly property var alternates: spec.alt !== undefined ? spec.alt : []
-    readonly property bool hasAlternates: alternates.length > 0
+    readonly property int keyType: root.spec.type
+    readonly property bool isAccent: root.spec.accent
+    readonly property bool repeats: root.spec.repeats
+    readonly property list<string> alternates: root.spec.alt
+    readonly property bool hasAlternates: root.spec.hasAlternates
 
-    // A key may ask to be drawn from an icon font. If that font is not
-    // available the key falls back to a text label rather than to a
-    // missing-glyph box, which is the difference between a keyboard that looks
-    // plainer than intended and one that looks broken.
-    readonly property bool usesIcon: spec.font === "omarchy" && root.iconFamily !== ""
+    // A key may ask to be drawn from an icon font. Whether it CAN be is a
+    // runtime question -- the font may not have loaded -- so the spec carries
+    // the request and this carries the answer. Without the font the key falls
+    // back to a text label rather than to a missing-glyph box, which is the
+    // difference between a keyboard that looks plainer than intended and one
+    // that looks broken.
+    readonly property bool usesIcon: root.spec.iconFont && root.iconFamily !== ""
 
-    readonly property string label: {
-        if (usesIcon && spec.glyph !== undefined)
-            return spec.glyph
-        if (spec.label !== undefined)
-            return spec.label
-        if (spec.text !== undefined)
-            return root.shifted ? spec.text.toUpperCase() : spec.text
-        return ""
-    }
+    readonly property string label:
+        root.usesIcon && root.spec.glyph !== ""
+            ? root.spec.glyph
+            : (root.shifted ? root.spec.shiftedLabel : root.spec.label)
 
     readonly property color fill: {
         if (pressed || locked || isAccent)
             return Colors.accent
-        if (keyType === "character")
+        if (keyType === KeyType.Character)
             return Colors.keyFill
         return Colors.modifierFill
     }
@@ -68,7 +84,7 @@ Item {
             return Colors.accentText
         if (latched)
             return Colors.accent          // one-shot: tinted, not filled
-        return keyType === "character" ? Colors.keyText : Colors.modifierText
+        return keyType === KeyType.Character ? Colors.keyText : Colors.modifierText
     }
 
     Rectangle {
@@ -99,7 +115,7 @@ Item {
             text: root.label
             color: root.textColor
             font.pixelSize: root.usesIcon ? 20
-                            : (root.keyType === "character" ? 19 : 13)
+                            : (root.keyType === KeyType.Character ? 19 : 13)
             font.family: root.usesIcon ? root.iconFamily : "sans-serif"
             renderType: Text.NativeRendering
         }

@@ -182,6 +182,14 @@ int main(int argc, char *argv[])
         // the motivating case: it parses, it draws, and tapping it does
         // nothing at all -- there is no error, because "no such layout" is
         // indistinguishable from "the user has not tapped it yet".
+        //
+        // Everything about the FORMAT -- a missing row, an unknown type, a key
+        // that emits nothing -- is reported by LayoutParser, which is the same
+        // parse the keyboard renders from. That is the point: this command and
+        // the running keyboard can no longer disagree about what a layout says,
+        // because there is only one reading of it. What is left here is the two
+        // checks the parser cannot make, because they need the set of layout
+        // names and the xkb keycode tables.
         LayoutStore store(nullptr);
         QTextStream out(stdout);
         const QStringList names = store.names();
@@ -189,55 +197,31 @@ int main(int argc, char *argv[])
 
         for (const QString &name : names) {
             const int before = problems;
-            const QVariantMap parsed = store.layout(name);
-            const QVariantList rows = parsed.value(QStringLiteral("rows")).toList();
-            if (rows.isEmpty()) {
-                out << QStringLiteral("FAIL %1: no rows\n").arg(name);
+            const LayoutSpec spec = store.layout(name);
+
+            for (const QString &problem : store.problems(name)) {
+                out << QStringLiteral("FAIL %1: %2\n").arg(name, problem);
                 ++problems;
-                continue;
             }
 
             int keys = 0;
-            for (int r = 0; r < rows.size(); ++r) {
-                const QVariantList rowKeys =
-                    rows.at(r).toMap().value(QStringLiteral("keys")).toList();
-                if (rowKeys.isEmpty()) {
-                    out << QStringLiteral("FAIL %1 row %2: no keys\n").arg(name).arg(r);
-                    ++problems;
-                }
-                for (const QVariant &keyValue : rowKeys) {
-                    const QVariantMap key = keyValue.toMap();
-                    const QString type =
-                        key.value(QStringLiteral("type"), QStringLiteral("character")).toString();
+            for (const KeyRowSpec &row : spec.rows()) {
+                for (const KeySpec &key : row.keys()) {
                     ++keys;
 
-                    if (type == QLatin1String("layout")) {
-                        const QString target = key.value(QStringLiteral("layout")).toString();
-                        if (!names.contains(target)) {
+                    if (key.type() == KeyType::Layout) {
+                        if (!names.contains(key.layout())) {
                             out << QStringLiteral("FAIL %1: a key switches to layout \"%2\", "
                                                   "which does not exist -- tapping it will do "
-                                                  "nothing, silently\n").arg(name, target);
+                                                  "nothing, silently\n").arg(name, key.layout());
                             ++problems;
                         }
-                    } else if (type == QLatin1String("action")) {
-                        const QString keyName = key.value(QStringLiteral("key")).toString();
-                        if (VirtualKeyboard::keycodeForName(keyName) == 0) {
+                    } else if (key.type() == KeyType::Action) {
+                        if (VirtualKeyboard::keycodeForName(key.key()) == 0) {
                             out << QStringLiteral("FAIL %1: unknown named key \"%2\"\n")
-                                       .arg(name, keyName);
+                                       .arg(name, key.key());
                             ++problems;
                         }
-                    } else if (type == QLatin1String("modifier")) {
-                        const QString modifier = key.value(QStringLiteral("modifier")).toString();
-                        if (modifier != QLatin1String("shift") && modifier != QLatin1String("ctrl")
-                            && modifier != QLatin1String("alt")) {
-                            out << QStringLiteral("FAIL %1: unknown modifier \"%2\"\n")
-                                       .arg(name, modifier);
-                            ++problems;
-                        }
-                    } else if (key.value(QStringLiteral("text")).toString().isEmpty()) {
-                        out << QStringLiteral("FAIL %1: a %2 key emits nothing\n")
-                                   .arg(name, type);
-                        ++problems;
                     }
                 }
             }
@@ -246,7 +230,7 @@ int main(int argc, char *argv[])
             out << QStringLiteral("%1 %2  %3 rows, %4 keys\n")
                        .arg(problems == before ? QStringLiteral("ok  ") : QStringLiteral("FAIL"),
                             name.leftJustified(20))
-                       .arg(rows.size()).arg(keys);
+                       .arg(spec.rows().size()).arg(keys);
         }
 
         out << QStringLiteral("\n%1 layouts, %2 problem(s)\n").arg(names.size()).arg(problems);

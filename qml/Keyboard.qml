@@ -30,35 +30,28 @@ Item {
 
     // -- layout ------------------------------------------------------------
     property string layoutName: Layouts.initialLayout
-    property var layout: Layouts.layout(layoutName)
+    // layoutName is the ONE source of truth, and this is derived from it.
+    //
+    // selectLayout used to set both, which quietly cost twice the work it
+    // looked like: assigning layoutName re-fired this binding and rebuilt every
+    // delegate, then assigning layout broke the binding and rebuilt them all
+    // again. Switching to a six-key layout created twelve caps. Now the
+    // assignment is gone and the binding is the only path.
+    readonly property keylayout layout: Layouts.layout(keyboard.layoutName)
     // A layout chosen by hand outranks the app's suggestion, until focus moves
     // somewhere else and the whole question is reopened (AC 21).
     property bool layoutChosenByHand: false
 
-    readonly property var rows: layout && layout.rows ? layout.rows : []
+    // No `layout && layout.rows` guard: a layout that could not be loaded is a
+    // valid LayoutSpec with no rows, not a null.
+    readonly property list<keyrow> rows: keyboard.layout.rows
     readonly property real rowHeight: rows.length > 0 ? height / rows.length : height
 
-    // How many key-widths the widest row spans -- NOT a hardcoded 10.
-    //
-    // The letters, symbols and terminal layouts are all 10 wide, so a constant
-    // looked right and was: until the numeric layout, which is 4 wide. At
-    // width/10 its keys came out 36px in a 360px panel, huddled in the middle
-    // of the screen with 108px of dead space either side. A layout may declare
-    // `columns` explicitly; otherwise it is measured.
-    readonly property real columns: {
-        if (layout && layout.columns !== undefined && layout.columns > 0)
-            return layout.columns
-        var widest = 1
-        for (var i = 0; i < rows.length; ++i) {
-            var keys = rows[i].keys
-            var total = 0
-            for (var j = 0; j < keys.length; ++j)
-                total += keys[j].width !== undefined ? keys[j].width : 1
-            if (total > widest)
-                widest = total
-        }
-        return widest
-    }
+    // Measured once, in C++, at parse time -- this was an interpreted double
+    // loop over every key of every row, re-run on every layout switch. The
+    // reasoning it encoded now lives beside the code that does the measuring,
+    // in LayoutSpec::columns.
+    readonly property real columns: keyboard.layout.columns
 
     readonly property real unit: width / columns
 
@@ -70,12 +63,6 @@ Item {
 
     readonly property bool shifted: shiftState > 0
 
-    readonly property var modifierStates: ({
-        shift: shiftState,
-        ctrl: ctrlState,
-        alt: altState
-    })
-
     // Bit values from VirtualKeyboard::Modifier.
     readonly property int modShift: 1
     readonly property int modControl: 2
@@ -85,13 +72,11 @@ Item {
         (ctrlState > 0 ? modControl : 0) | (altState > 0 ? modAlt : 0)
 
     function selectLayout(name, byHand) {
-        var next = Layouts.layout(name)
-        if (!next || !next.rows) {
+        if (!Layouts.layout(name).valid) {
             console.warn("moarchy: no usable layout named", name, "- staying on", layoutName)
             return
         }
         layoutName = name
-        layout = next
         layoutChosenByHand = byHand === true
         // A layout switch is a fresh start for one-shot modifiers, but a locked
         // shift is a deliberate state and survives.
@@ -142,11 +127,13 @@ Item {
             id: rowRepeater
             model: keyboard.rows
             delegate: KeyRow {
-                required property var modelData
-                keys: modelData.keys
+                required property keyrow modelData
+                row: modelData
                 unit: keyboard.unit
                 shifted: keyboard.shifted
-                modifierStates: keyboard.modifierStates
+                shiftState: keyboard.shiftState
+                ctrlState: keyboard.ctrlState
+                altState: keyboard.altState
                 iconFamily: keyboard.iconFamily
                 width: rowsColumn.width
                 height: keyboard.rowHeight
@@ -216,27 +203,27 @@ Item {
         var spec = cap.spec
 
         switch (cap.keyType) {
-        case "modifier":
-            if (spec.modifier === "shift")
+        case KeyType.Modifier:
+            if (spec.modifier === KeyModifier.Shift)
                 shiftState = cycleModifier(shiftState)
-            else if (spec.modifier === "ctrl")
+            else if (spec.modifier === KeyModifier.Ctrl)
                 ctrlState = cycleModifier(ctrlState)
-            else if (spec.modifier === "alt")
+            else if (spec.modifier === KeyModifier.Alt)
                 altState = cycleModifier(altState)
             return
 
-        case "layout":
+        case KeyType.Layout:
             selectLayout(spec.layout, true)
             return
 
-        case "action":
+        case KeyType.Action:
             Router.sendKey(spec.key, chordModifiers)
             consumeOneShots()
             return
         }
 
         // Character or space.
-        var text = spec.text !== undefined ? spec.text : ""
+        var text = spec.text
         if (text === "")
             return
 
@@ -249,7 +236,7 @@ Item {
             return
         }
 
-        Router.sendText(shifted ? text.toUpperCase() : text)
+        Router.sendText(shifted ? spec.shiftedText : text)
         consumeOneShots()
     }
 
@@ -406,7 +393,7 @@ Item {
     }
 
     Component.onCompleted: {
-        if (!layout || !layout.rows)
+        if (!layout.valid)
             console.warn("moarchy: layout", layoutName, "did not load; keyboard will be blank")
         applySuggestion()
     }
