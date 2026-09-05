@@ -12,6 +12,7 @@
 #include <QGuiApplication>
 #include <QLoggingCategory>
 #include <QQmlContext>
+#include <QQmlEngine>
 #include <QQuickView>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -178,12 +179,15 @@ int main(int argc, char *argv[])
     if (!panel.prepare(&error))
         return fail(QStringLiteral("cannot build the panel"), error);
 
-    QQmlContext *context = panel.view()->rootContext();
-    context->setContextProperty(QStringLiteral("Router"), &router);
-    context->setContextProperty(QStringLiteral("Colors"), &theme);
-    context->setContextProperty(QStringLiteral("Layouts"), &layouts);
-    context->setContextProperty(QStringLiteral("Panel"), &panel);
-    context->setContextProperty(QStringLiteral("startingLayout"), parser.value(layoutOption));
+    // Singletons, not context properties. See the note above class Theme for
+    // why: qmllint can resolve a declared singleton and cannot see a context
+    // property, and on this program an unresolvable colour renders as black on
+    // black with nothing logged.
+    layouts.setInitialLayout(parser.value(layoutOption));
+
+    KeyRouter::setInstance(&router);
+    Theme::setInstance(&theme);
+    LayoutStore::setInstance(&layouts);
 
     if (!panel.load(QUrl(QStringLiteral("qrc:/moarchy/qml/Main.qml")), &error))
         return fail(QStringLiteral("cannot load the keyboard QML"), error);

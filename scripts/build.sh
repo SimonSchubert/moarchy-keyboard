@@ -11,5 +11,12 @@ cmake -S . -B "$BUILD_DIR" -G Ninja \
   -DCMAKE_INSTALL_PREFIX=/usr
 
 cmake --build "$BUILD_DIR" --parallel
+
+# Lint is part of the build, not an optional extra: see scripts/lint.sh for why
+# a QML warning here is a silently invisible bug rather than a style nit.
+echo
+echo "==> qmllint"
+BUILD_DIR="$BUILD_DIR" ./scripts/lint.sh
+
 echo
 echo "==> built $BUILD_DIR/moarchy-keyboard"

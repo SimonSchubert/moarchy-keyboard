@@ -1,4 +1,7 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
+import moarchy
 
 // The long-press alternates strip, drawn inside the panel.
 //
@@ -38,6 +41,7 @@ Item {
         border.color: Colors.accent
 
         Row {
+            id: strip
             anchors.fill: parent
             anchors.margins: 3
             spacing: 0
@@ -45,19 +49,22 @@ Item {
             Repeater {
                 model: root.alternates
                 delegate: Rectangle {
+                    id: cell
+
                     required property var modelData
                     required property int index
 
+                    readonly property bool chosen: index === root.selectedIndex
+
                     width: root.cellWidth
-                    height: parent.height
+                    height: strip.height
                     radius: 4
-                    color: index === root.selectedIndex ? Colors.accent : "transparent"
+                    color: chosen ? Colors.accent : "transparent"
 
                     Text {
                         anchors.centerIn: parent
-                        text: parent.modelData
-                        color: parent.index === root.selectedIndex
-                               ? Colors.accentText : Colors.modifierText
+                        text: cell.modelData
+                        color: cell.chosen ? Colors.accentText : Colors.modifierText
                         font.pixelSize: 19
                         renderType: Text.NativeRendering
                     }

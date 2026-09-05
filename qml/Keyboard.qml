@@ -1,4 +1,7 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
+import moarchy
 
 // Layout, state and touch.
 //
@@ -23,7 +26,7 @@ Item {
     id: keyboard
 
     // -- layout ------------------------------------------------------------
-    property string layoutName: startingLayout
+    property string layoutName: Layouts.initialLayout
     property var layout: Layouts.layout(layoutName)
     // A layout chosen by hand outranks the app's suggestion, until focus moves
     // somewhere else and the whole question is reopened (AC 21).
@@ -31,7 +34,30 @@ Item {
 
     readonly property var rows: layout && layout.rows ? layout.rows : []
     readonly property real rowHeight: rows.length > 0 ? height / rows.length : height
-    readonly property real unit: width / 10
+
+    // How many key-widths the widest row spans -- NOT a hardcoded 10.
+    //
+    // The letters, symbols and terminal layouts are all 10 wide, so a constant
+    // looked right and was: until the numeric layout, which is 4 wide. At
+    // width/10 its keys came out 36px in a 360px panel, huddled in the middle
+    // of the screen with 108px of dead space either side. A layout may declare
+    // `columns` explicitly; otherwise it is measured.
+    readonly property real columns: {
+        if (layout && layout.columns !== undefined && layout.columns > 0)
+            return layout.columns
+        var widest = 1
+        for (var i = 0; i < rows.length; ++i) {
+            var keys = rows[i].keys
+            var total = 0
+            for (var j = 0; j < keys.length; ++j)
+                total += keys[j].width !== undefined ? keys[j].width : 1
+            if (total > widest)
+                widest = total
+        }
+        return widest
+    }
+
+    readonly property real unit: width / columns
 
     // -- modifier state ----------------------------------------------------
     // 0 off, 1 latched for one key, 2 locked until pressed again (AC 34).
@@ -119,7 +145,10 @@ Item {
             return null
         var index = Math.floor(y / rowHeight)
         index = Math.max(0, Math.min(rows.length - 1, index))
-        var row = rowRepeater.itemAt(index)
+        // `as KeyRow` is not decoration: itemAt() is typed QQuickItem, so
+        // without the cast qmllint cannot see keyAt at all and a rename would
+        // fail silently at runtime instead of loudly at build time.
+        var row = rowRepeater.itemAt(index) as KeyRow
         return row ? row.keyAt(x, y - index * rowHeight) : null
     }
 

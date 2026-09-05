@@ -1,4 +1,5 @@
 import QtQuick
+import moarchy
 
 // The panel's root. Deliberately thin: everything interesting is in Keyboard.qml.
 //

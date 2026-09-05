@@ -1,4 +1,7 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
+import moarchy
 
 // A row of keys, full panel width, with the keys centred inside it.
 //

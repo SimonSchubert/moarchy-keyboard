@@ -1,5 +1,8 @@
 #pragma once
 
+#include <QQmlEngine>
+#include <QtGlobal>
+
 #include <QObject>
 #include <QString>
 
@@ -21,6 +24,8 @@ class InputMethod;
 class KeyRouter : public QObject
 {
     Q_OBJECT
+    QML_NAMED_ELEMENT(Router)
+    QML_SINGLETON
     Q_PROPERTY(bool active READ isActive NOTIFY activeChanged)
     Q_PROPERTY(bool sensitive READ isSensitive NOTIFY stateChanged)
     Q_PROPERTY(QString suggestedLayout READ suggestedLayout NOTIFY stateChanged)
@@ -28,6 +33,22 @@ class KeyRouter : public QObject
                    NOTIFY latchedModifiersChanged)
 
 public:
+    // See the note above the class.
+    static void setInstance(KeyRouter *instance) { s_instance = instance; }
+    static KeyRouter *create(QQmlEngine *, QJSEngine *) {
+        // NOT Q_ASSERT: it compiles out under NDEBUG, and the packaged build is
+        // Release, so a null instance would be a segfault in the field and a
+        // clean abort only on a developer's machine. Returning nullptr makes
+        // QML report an unavailable singleton, which is loud and survivable.
+        if (!s_instance) {
+            qCritical("KeyRouter singleton used before main() set the instance");
+            return nullptr;
+        }
+        // The engine must never delete an object main owns.
+        QQmlEngine::setObjectOwnership(s_instance, QQmlEngine::CppOwnership);
+        return s_instance;
+    }
+
     KeyRouter(InputMethod *inputMethod, VirtualKeyboard *virtualKeyboard,
               QObject *parent = nullptr);
 
@@ -69,4 +90,6 @@ private:
     InputMethod *m_inputMethod = nullptr;
     VirtualKeyboard *m_virtualKeyboard = nullptr;
     VirtualKeyboard::Modifiers m_latched = VirtualKeyboard::NoModifiers;
+
+    inline static KeyRouter *s_instance = nullptr;
 };

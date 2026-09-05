@@ -1,5 +1,8 @@
 #pragma once
 
+#include <QQmlEngine>
+#include <QtGlobal>
+
 #include <QColor>
 #include <QHash>
 #include <QObject>
@@ -18,6 +21,8 @@ class QTimer;
 class Theme : public QObject
 {
     Q_OBJECT
+    QML_NAMED_ELEMENT(Colors)
+    QML_SINGLETON
 
     Q_PROPERTY(QString name READ name NOTIFY changed)
     Q_PROPERTY(bool dark READ isDark NOTIFY changed)
@@ -40,6 +45,22 @@ class Theme : public QObject
     Q_PROPERTY(QColor accentText READ accentText NOTIFY changed)
 
 public:
+    // See the note above the class.
+    static void setInstance(Theme *instance) { s_instance = instance; }
+    static Theme *create(QQmlEngine *, QJSEngine *) {
+        // NOT Q_ASSERT: it compiles out under NDEBUG, and the packaged build is
+        // Release, so a null instance would be a segfault in the field and a
+        // clean abort only on a developer's machine. Returning nullptr makes
+        // QML report an unavailable singleton, which is loud and survivable.
+        if (!s_instance) {
+            qCritical("Theme singleton used before main() set the instance");
+            return nullptr;
+        }
+        // The engine must never delete an object main owns.
+        QQmlEngine::setObjectOwnership(s_instance, QQmlEngine::CppOwnership);
+        return s_instance;
+    }
+
     explicit Theme(QObject *parent = nullptr);
 
     // Watches the live palette and reloads on change. Safe to call when the
@@ -86,4 +107,6 @@ private:
     QColor m_modifierText;
     QColor m_accent;
     QColor m_accentText;
+
+    inline static Theme *s_instance = nullptr;
 };
