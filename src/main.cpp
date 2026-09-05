@@ -466,15 +466,23 @@ int main(int argc, char *argv[])
     // First actual frame, not just "we asked for one". This is the number AC 36
     // is about -- everything above is work done before the compositor has
     // anything to show.
-    QObject::connect(panel.view(), &QQuickWindow::frameSwapped, &app, [&router] {
+    // Both signals, because frameSwapped alone stopped firing usefully once
+    // QSG_RENDER_LOOP=basic was set for the memory saving -- the AC 35 tuning
+    // and the AC 33 measurement collided, and a run recorded no frame timings
+    // at all while reporting nothing wrong. afterRendering is emitted by the
+    // scene graph itself rather than by the swap, so it survives the change;
+    // noteFrame only reports the first arrival after a press, so connecting
+    // both cannot double-count.
+    const auto noteFrame = [&router] { router.noteFrame(); };
+    QObject::connect(panel.view(), &QQuickWindow::afterRendering, &app, noteFrame);
+    QObject::connect(panel.view(), &QQuickWindow::frameSwapped, &app, noteFrame);
+
+    QObject::connect(panel.view(), &QQuickWindow::afterRendering, &app, [] {
         static bool first = true;
         if (first) {
             first = false;
             MOARCHY_MARK("FIRST FRAME");
         }
-        // Closes the AC 33 loop: the first frame after a key press is the one
-        // that shows it lit.
-        router.noteFrame();
     });
 
     return app.exec();

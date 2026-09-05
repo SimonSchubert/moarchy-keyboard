@@ -24,7 +24,13 @@
 # honest answer to "what does adding this process cost", because shared clean
 # library pages are already resident and stay resident when it exits.
 set -uo pipefail
-. /tmp/moa-env.sh
+# Prefer the copy deployed alongside these scripts; fall back to the one an
+# earlier session may have left in /tmp. A reboot clears /tmp, and the failure
+# when it is missing is silent and misleading -- see tests/env.sh.
+if [[ -f "$(dirname "$0")/env.sh" ]]; then . "$(dirname "$0")/env.sh"
+elif [[ -f /tmp/moa-env.sh ]]; then . /tmp/moa-env.sh
+else echo "no env.sh next to $0 and none in /tmp" >&2; exit 1
+fi
 
 # Wake the panel before anything else. swayidle blanks the output after ten
 # minutes, and grim then BLOCKS FOREVER waiting for a frame that will never

@@ -8,7 +8,13 @@
 # Prints PASS/FAIL per criterion. Screenshots land in /tmp/moa-ac-*.png for the
 # ones only an eye can judge.
 set -uo pipefail
-. /tmp/moa-env.sh
+# Prefer the copy deployed alongside these scripts; fall back to the one an
+# earlier session may have left in /tmp. A reboot clears /tmp, and the failure
+# when it is missing is silent and misleading -- see tests/env.sh.
+if [[ -f "$(dirname "$0")/env.sh" ]]; then . "$(dirname "$0")/env.sh"
+elif [[ -f /tmp/moa-env.sh ]]; then . /tmp/moa-env.sh
+else echo "no env.sh next to $0 and none in /tmp" >&2; exit 1
+fi
 
 # Wake the panel before anything else. swayidle blanks the output after ten
 # minutes, and grim then BLOCKS FOREVER waiting for a frame that will never
@@ -536,6 +542,36 @@ if ours; then
     "")  no "AC 32 (nothing emitted at all)" ;;
     *)   no "AC 32 (gave '$added')" ;;
   esac
+fi
+
+section "AC 34 -- modifiers latch for one key, and lock on a double tap" || true
+if ours; then
+  text_probe_start
+  # shift is row 2, width 1.5, so it spans x 0..54 and its centre is 27.
+  # z is the key after it, centre 72. Row 2 centre is y 592.
+  before=$(text_probe_content)
+
+  # One tap on shift, then q: capital, and the latch is spent.
+  sudo -n python3 /tmp/tap.py --scale 2 --warmup 180,150 27,592 18,442 54,442 >/dev/null 2>&1
+  sleep 2
+  oneshot=$(text_probe_content)
+  echo "  one-shot shift: '$before' -> '$oneshot'   (want Qw)"
+
+  # Two taps on shift locks it, so both letters are capital.
+  sudo -n python3 /tmp/tap.py --scale 2 27,592 27,592 90,442 126,442 >/dev/null 2>&1
+  sleep 2
+  locked=$(text_probe_content)
+  echo "  locked shift:   '$oneshot' -> '$locked'   (want QwER)"
+
+  if [[ "$oneshot" == *Qw* && "$locked" == *ER* ]]; then
+    ok "AC 34 (one-shot latch spent after one key, double tap locks)"
+  elif [[ "$oneshot" == *QW* ]]; then
+    no "AC 34 (latch was not spent: got '$oneshot', so shift stuck on)"
+  elif [[ "$oneshot" == *qw* ]]; then
+    no "AC 34 (shift did nothing: got '$oneshot')"
+  else
+    no "AC 34 (one-shot '$oneshot', locked '$locked')"
+  fi
 fi
 
 section "AC 33 + AC 38 -- feedback and commit latency" || true

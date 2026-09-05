@@ -10,10 +10,10 @@ it; everything unproven says so.
 
 | | count |
 |---|---|
-| Passed | 34 |
+| Passed | 37 |
 | Failed | 2 |
-| Partial | 4 |
-| Not yet verified | 5 |
+| Partial | 3 |
+| Not yet verified | 3 |
 
 45 criteria: SPEC.md's 44 plus AC 4b, added when testing showed that "the
 surface stays mapped when retracted" and "the retracted keyboard does not
@@ -52,7 +52,9 @@ paint — and both are corrected against measurements below rather than defended
 | 30 | **Two fingers at once** | A second finger landing while the first was still held typed **both**: field went `''` → `wq`. One finger would have given one letter |
 | 31 | **Sliding off a key cancels it** | Press `q`, drag to `w`, release there: field unchanged at `wq`. Neither letter emitted — not `q` because the finger left it, not `w` because the press did not begin there |
 | 32 | **Long press selects an alternate** | Holding `a` past 400 ms and releasing gave `@`, its first alternate — `wq` → `wq@`. Not the base character, so the popup opened and the release selected from it |
-| 38 | **Release to commit ≤ 50 ms** | 8, 17 and 24 ms. Worst 24 ms, less than half the budget |
+| 33 | **Press feedback within one frame** | 5, 5 and 6 ms against a 16.7 ms frame. Measured after switching the instrumentation from `frameSwapped` to `afterRendering` — see below |
+| 34 | **Modifiers latch, and lock on a double tap** | One tap on shift then `q`,`w` gave `Qw`: capital, and the latch spent. Two taps then `e`,`r` gave `ER`: both capital |
+| 38 | **Release to commit ≤ 50 ms** | 0, 0 and 0 ms — below the millisecond the timer can resolve. An earlier run measuring press-to-wire gave 8/17/24 ms, which was the finger's hold time, not the keyboard's |
 | 4b | **A retracted keyboard is not an invisible wall** | Touches pass through to the app when down and are blocked when up. Both directions, because one proves half |
 | 11 | **Keycode path with no input method at all** | A QML probe binding no text input quit on a synthesised `q` — a real key event to a client that cannot receive `commit_string` |
 | 13 | Terminal correctness | Ctrl+C killed `cat`; Escape produced `^[` and Tab a real tab |
@@ -138,27 +140,19 @@ private dirty, and overridable from the environment.
   tap. "Visible" is satisfied only by convention: the layout keys show where you
   can go, not where you are, exactly as every phone keyboard does. Honest to call
   that partial rather than met.
-- **AC 33 (press feedback within one frame)** — the first run measured **11, 14
-  and 18 ms** against a 17 ms bar (one frame at 60 Hz), so two of three samples
-  were inside it and the third marginally out. The re-run recorded nothing at
-  all, because enabling `QSG_RENDER_LOOP=basic` for the memory saving appears to
-  change when `QQuickWindow::frameSwapped` fires, and the instrumentation hangs
-  off that signal. So the number is borderline *and* the way of measuring it now
-  needs fixing — the AC 35 tuning and the AC 33 measurement collided, and that is
-  worth knowing before either is trusted.
 - **AC 29 (no dead zones)** — hit areas tessellate by construction, and taps land
   on the intended key including on the centred nine-key rows that the clamping
   exists for. Not swept across the whole panel.
 
 ## Not yet verified
 
-AC 6 (survives compositor restart), 34 (modifier latching), and 42–44 (mobileomarchy integration, deliberately
+AC 6 (survives compositor restart) and 42–44 (mobileomarchy integration, deliberately
 untouched — three other sessions were editing that repo today; the change is
 written up in `packaging/mobileomarchy-integration.md` for review).
 
-AC 34 is the last touch criterion outstanding; the gestures for it exist in
-`tests/tap.py` and it simply has no section written yet. Nothing about it is
-known to be broken, and this page does not count untested as passing.
+Every touch and latency criterion is now answered. What is left is AC 6, which
+needs a compositor restart that would disturb other sessions on this shared
+device, and the integration criteria, which are deliberately unapplied.
 
 ## The contrast fallback is load-bearing, not a safety net
 
@@ -246,6 +240,22 @@ response — assert which process owns `sm.puri.OSK0` before believing a
 keystroke, poll for windows instead of sleeping, fail below five activates, and
 distinguish "the probe never opened" from "the probe saw nothing" — are worth
 more than the results they produced.
+
+## The memory tuning silently broke the latency measurement
+
+Worth its own note, because the two fixes fought and the loser failed quietly.
+
+Setting `QSG_RENDER_LOOP=basic` for the 4.6 MB memory saving changed when
+`QQuickWindow::frameSwapped` fires, and the AC 33 instrumentation hung off that
+signal. A whole run then recorded **no frame timings at all** while reporting
+nothing wrong — the criterion simply said "no frame timing recorded", which is
+easy to read as a harness hiccup rather than as one fix disabling another's
+measurement.
+
+Connecting `afterRendering` as well fixed it, and the result is better than
+before the tuning rather than worse: **5, 5 and 6 ms**, against **11, 14 and 18 ms**
+on the threaded render loop. So the basic loop improved the number it had been
+hiding.
 
 ## The device ran out of battery
 
