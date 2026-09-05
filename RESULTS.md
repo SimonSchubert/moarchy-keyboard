@@ -10,15 +10,27 @@ it; everything unproven says so.
 
 | | count |
 |---|---|
-| Passed | 37 |
+| Passed | 41 |
 | Failed | 2 |
 | Partial | 3 |
-| Not yet verified | 3 |
+| Not yet verified | 4 |
 
-45 criteria: SPEC.md's 44 plus AC 4b, added when testing showed that "the
+49 criteria: SPEC.md's 48 plus AC 4b, added when testing showed that "the
 surface stays mapped when retracted" and "the retracted keyboard does not
 swallow every touch" are two different claims and only one of them was written
 down.
+
+These add up to 50 against 49 criteria because **AC 2 is deliberately in two
+places**: what it claims about surfaces — one created, none destroyed — passes
+outright and always has, while the 20 cycles it asks for have never been
+reached. Splitting it would lose one half or the other.
+
+Three drifts corrected in this pass. ACs 45–48 were added by the gesture-strip
+commit and went unrecorded; they are measured below. **ACs 5 and 18 were
+recorded nowhere at all** — not passed, failed, partial or pending — which is
+how the old summary said 37 while its own table listed 35. And README.md
+carried a much older count ("21 pass, 1 fails") from before several rewrites of
+this file.
 
 The keyboard works. It raises and retracts itself, types into both kinds of
 Wayland client, recolours live, and keeps exactly one layer surface. Both
@@ -55,7 +67,13 @@ paint — and both are corrected against measurements below rather than defended
 | 33 | **Press feedback within one frame** | 5, 5 and 6 ms against a 16.7 ms frame. Measured after switching the instrumentation from `frameSwapped` to `afterRendering` — see below |
 | 34 | **Modifiers latch, and lock on a double tap** | One tap on shift then `q`,`w` gave `Qw`: capital, and the latch spent. Two taps then `e`,`r` gave `ER`: both capital |
 | 38 | **Release to commit ≤ 50 ms** | 0, 0 and 0 ms — below the millisecond the timer can resolve. An earlier run measuring press-to-wire gave 8/17/24 ms, which was the finger's hold time, not the keyboard's |
+| 5 | **Never steals focus** | `KeyboardInteractivityNone`; with the keyboard up the app under it keeps keyboard focus, re-confirmed this run |
+| 18 | Layouts are data, not code | Five JSON files, no rebuild to edit one — and AC 19 proves the loading path by shadowing a shipped layout from `~/.config` |
 | 4b | **A retracted keyboard is not an invisible wall** | Touches pass through to the app when down and are blocked when up. Both directions, because one proves half |
+| 45 | **Background runs under the gesture strip** | `set_size(0, 224)` — 200 of panel plus 24 of strip — with `set_margin(0, 0, -24, 0)`. The panel background reaches the last physical row behind the home pill; see `docs/keyboard.png` |
+| 46 | **Running under the strip costs the app nothing** | `set_exclusive_zone(224)` against `margin.bottom = -24`: sway reduces the usable area by their sum, so the reservation is exactly **200**, the panel height. Measured on the tree: bar 26 + app 474 = 500 of 720, leaving 220 = 200 keyboard + 20 strip |
+| 47 | **Nothing tappable sits in the band** | The key rows stop at the strip's top edge and the restore handle is inset by `stripInset` too. Visible in `docs/keyboard.png`: the bottom row clears the pill |
+| 48 | **No input region masked for either gesture band** | `kDefaultBackEdgeInset` is 0 and no mask is set for the strip. This panel is on `Top`, both gesture surfaces are on `Overlay`, so they take their touches first — and the back gesture and home pill both still work |
 | 11 | **Keycode path with no input method at all** | A QML probe binding no text input quit on a synthesised `q` — a real key event to a client that cannot receive `commit_string` |
 | 13 | Terminal correctness | Ctrl+C killed `cat`; Escape produced `^[` and Tab a real tab |
 | 14 | Backspace deletes one character | `hi` → `h` |
@@ -67,28 +85,55 @@ paint — and both are corrected against measurements below rather than defended
 
 ## Failed
 
-**AC 36 — cold start ≤ 800 ms. Measured 1247–1281 ms, consistently.**
+**AC 36 — cold start ≤ 800 ms. Measured 1387 ms (median of 5). Still a fail,
+and the AC's own measurement has stopped meaning what it says.**
 
-Timed from inside the process against one stopwatch, ending at
-`QQuickWindow::frameSwapped` — actual first paint, not "we asked for one":
+Timed from inside the process against one stopwatch. Medians of five runs with
+a text field focused throughout, so every run measures the same thing:
 
-| phase | at |
-|---|---|
-| QGuiApplication | 20 ms |
-| Wayland globals bound | 23 ms |
-| layouts loaded | 24 ms |
-| keymap compiled and uploaded | 57 ms |
-| input method bound | 57 ms |
-| theme parsed | 59 ms |
-| **panel prepared** (QQuickView + LayerShellQt) | **465 ms** |
-| **QML loaded and surface mapped** | **944 ms** |
-| **FIRST FRAME** | **1267 ms** |
+| phase | before the refactor | after |
+|---|---|---|
+| QGuiApplication | 20 ms | 21 ms |
+| Wayland globals bound | 22 ms | 23 ms |
+| layouts loaded | 23 ms | 29 ms |
+| keymap compiled and uploaded | 53 ms | 54 ms |
+| input method bound | 53 ms | 54 ms |
+| theme parsed | 54 ms | 56 ms |
+| **panel prepared** (QQuickView + LayerShellQt) | **495 ms** | **453 ms** |
+| **QML loaded and surface mapped** | **991 ms** | **942 ms** |
+| **FIRST FRAME** | **1463 ms** | **1387 ms** |
 
-Everything this project wrote costs 59 ms. The remaining 1.2 s is Qt Quick:
-~400 ms to build the view, ~480 ms to load and instantiate the QML, ~320 ms to
+Everything this project wrote still costs under 60 ms. The rest is Qt Quick:
+~400 ms to build the view, ~490 ms to load and instantiate the QML, ~450 ms to
 render the first frame. There is no obvious 500 ms to find in that, and 800 ms
 was a number picked without knowing it. The AC should be restated against a
 measurement, not defended.
+
+`layouts loaded` grew 6 ms because all five layouts are now parsed eagerly
+rather than on first use — and `keymap compiled` is unchanged at 53/54 ms,
+because `allCharacters()` forced every one of them through the parser anyway.
+The work moved; it did not appear.
+
+Read the 76 ms improvement in FIRST FRAME cautiously. Taken phase by phase, the
+QML load — the only part the refactor touches — went from 496 ms to 489 ms.
+The rest sits in `panel prepared` (441 → 397) and the first render (472 → 445),
+neither of which this change goes near, so most of that 76 ms is run-to-run
+variance rather than anything earned. What is fair to claim is that removing an
+interpreted double loop over every key, a per-row loop, nine `!== undefined`
+branches per key and a `toUpperCase()` per label did not make instantiation
+slower, and that the spread got much tighter: 1373–1470 ms across five runs
+against 1413–1637 before, plus one baseline run at 4960 ms.
+
+**That 4960 ms outlier is the real finding.** Since the surface map was deferred
+to first show, `FIRST FRAME` cannot fire until something focuses a text input —
+so what the mark times is "how long until a text field showed up, and then we
+painted", not "cold start to first paint". `tests/acceptance.sh` does not focus
+anything before its AC 36 section, so it now reports whatever the previous
+section happened to leave focused: one run here recorded
+`no FIRST FRAME mark -- did the surface ever paint?` and the next, on the same
+code, recorded 1487 ms. The number in this table comes from a harness that
+pins the precondition down; the one in `acceptance.sh` does not, and should be
+fixed before AC 36 is argued about again.
 
 **AC 35 — incremental PSS ≤ 25 MB. Measured 75.8 MB. The target was the wrong
 metric and the wrong number, and the truth is more interesting than either.**
@@ -240,6 +285,44 @@ response — assert which process owns `sm.puri.OSK0` before believing a
 keystroke, poll for windows instead of sleeping, fail below five activates, and
 distinguish "the probe never opened" from "the probe saw nothing" — are worth
 more than the results they produced.
+
+## Proving a refactor changed nothing, on a harness that disagrees with itself
+
+Giving the key spec a real type rewrote how every label, colour, width and
+modifier is derived. None of that is visible in a diff of behaviour, so it was
+checked against the previous build directly, both binaries run from the same
+path so that journald tags them the same and `pkill -x moarchy-keyboar` — which
+truncates at 15 characters — actually matches.
+
+| check | before | after |
+|---|---|---|
+| `--dump-keymap` | — | **byte-identical** |
+| `--check-layouts` | — | **byte-identical** |
+| `smoke.sh` keystrokes | `y Tab o o Up` | `y Tab o o Up` |
+| `smoke.sh` screenshot | | pixel-identical but the clock |
+| shift latch, then lock | `QwER` | `QwER` |
+| Ctrl+C kills `cat` | 2 of 4 | 2 of 4 |
+
+The keymap being byte-identical is the one that matters: the generated keycodes
+have to be reproducible between runs, so `shiftedText` is deliberately kept out
+of `allCharacters()` even though it is right there on the spec.
+
+Two things the harness said that were not true, both consistent with the
+warning above:
+
+**Ctrl+C fails about half the time — on both builds.** The acceptance suite
+recorded AC 13 as a pass before and "needs an eye" after, which looks exactly
+like a regression in the modifier rework. Run four times against each binary it
+is 2/4 either way, and `commit_string` never appears in the journal for the `c`
+in any of the eight runs — so the keyboard always took the chord path and never
+sent a letter. Whatever is dropping it is in the tap or the terminal, not here.
+It is worth chasing, and it is not new.
+
+**The suite's window-opening races moved three more results.** AC 11 went from
+"the probe survived" to "the probe never opened", AC 2's 20-cycle driver got 5
+cycles instead of 26 — while still recording 1 surface and 0 destroys, which is
+the part AC 2 is about — and AC 13 became an eyeball. Every one of them is a
+window that did not open in time.
 
 ## The memory tuning silently broke the latency measurement
 

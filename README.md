@@ -16,9 +16,10 @@ both kinds of Wayland client, recolours live on `omarchy-theme-set`, and keeps
 exactly one layer surface for the life of the process.
 
 [RESULTS.md](RESULTS.md) tracks every acceptance criterion in
-[SPEC.md](SPEC.md), with the measurement behind each one. **21 pass, 1 fails**
-(the memory target, honestly), 4 are partial, and the rest await a slot on the
-shared device.
+[SPEC.md](SPEC.md), with the measurement behind each one. Of 49: **41 pass, 2
+fail**, 3 are partial, and 3 await a slot on the shared device. Both failures
+are targets set without evidence — 25 MB of PSS and 800 ms to first paint — and
+both are answered there with a measurement rather than defended.
 
 Not yet landed in mobileomarchy — see
 [packaging/mobileomarchy-integration.md](packaging/mobileomarchy-integration.md).
