@@ -3,6 +3,7 @@
 #include "layoutstore.h"
 #include "oskservice.h"
 #include "panel.h"
+#include "virtualkeyboard.h"
 #include "startupclock.h"
 #include "theme.h"
 #include "virtualkeyboard.h"
@@ -111,7 +112,90 @@ int main(int argc, char *argv[])
         QStringLiteral("fgRole,bgRole[,alpha]"));
     parser.addOption(roleOption);
 
+    QCommandLineOption checkLayoutsOption(
+        QStringList { QStringLiteral("check-layouts") },
+        QStringLiteral("Validate every layout and exit non-zero on a problem. "
+                       "Needs no compositor."));
+    parser.addOption(checkLayoutsOption);
+
     parser.process(app);
+
+    if (parser.isSet(checkLayoutsOption)) {
+        // Checks the things the QML assumes and cannot complain about at
+        // runtime. A `type: layout` key naming a layout that does not exist is
+        // the motivating case: it parses, it draws, and tapping it does
+        // nothing at all -- there is no error, because "no such layout" is
+        // indistinguishable from "the user has not tapped it yet".
+        LayoutStore store;
+        QTextStream out(stdout);
+        const QStringList names = store.names();
+        int problems = 0;
+
+        for (const QString &name : names) {
+            const int before = problems;
+            const QVariantMap parsed = store.layout(name);
+            const QVariantList rows = parsed.value(QStringLiteral("rows")).toList();
+            if (rows.isEmpty()) {
+                out << QStringLiteral("FAIL %1: no rows\n").arg(name);
+                ++problems;
+                continue;
+            }
+
+            int keys = 0;
+            for (int r = 0; r < rows.size(); ++r) {
+                const QVariantList rowKeys =
+                    rows.at(r).toMap().value(QStringLiteral("keys")).toList();
+                if (rowKeys.isEmpty()) {
+                    out << QStringLiteral("FAIL %1 row %2: no keys\n").arg(name).arg(r);
+                    ++problems;
+                }
+                for (const QVariant &keyValue : rowKeys) {
+                    const QVariantMap key = keyValue.toMap();
+                    const QString type =
+                        key.value(QStringLiteral("type"), QStringLiteral("character")).toString();
+                    ++keys;
+
+                    if (type == QLatin1String("layout")) {
+                        const QString target = key.value(QStringLiteral("layout")).toString();
+                        if (!names.contains(target)) {
+                            out << QStringLiteral("FAIL %1: a key switches to layout \"%2\", "
+                                                  "which does not exist -- tapping it will do "
+                                                  "nothing, silently\n").arg(name, target);
+                            ++problems;
+                        }
+                    } else if (type == QLatin1String("action")) {
+                        const QString keyName = key.value(QStringLiteral("key")).toString();
+                        if (VirtualKeyboard::keycodeForName(keyName) == 0) {
+                            out << QStringLiteral("FAIL %1: unknown named key \"%2\"\n")
+                                       .arg(name, keyName);
+                            ++problems;
+                        }
+                    } else if (type == QLatin1String("modifier")) {
+                        const QString modifier = key.value(QStringLiteral("modifier")).toString();
+                        if (modifier != QLatin1String("shift") && modifier != QLatin1String("ctrl")
+                            && modifier != QLatin1String("alt")) {
+                            out << QStringLiteral("FAIL %1: unknown modifier \"%2\"\n")
+                                       .arg(name, modifier);
+                            ++problems;
+                        }
+                    } else if (key.value(QStringLiteral("text")).toString().isEmpty()) {
+                        out << QStringLiteral("FAIL %1: a %2 key emits nothing\n")
+                                   .arg(name, type);
+                        ++problems;
+                    }
+                }
+            }
+            // Per-layout, not cumulative: with a running total, every layout
+            // after the first failure prints blank and reads as also broken.
+            out << QStringLiteral("%1 %2  %3 rows, %4 keys\n")
+                       .arg(problems == before ? QStringLiteral("ok  ") : QStringLiteral("FAIL"),
+                            name.leftJustified(20))
+                       .arg(rows.size()).arg(keys);
+        }
+
+        out << QStringLiteral("\n%1 layouts, %2 problem(s)\n").arg(names.size()).arg(problems);
+        return problems == 0 ? 0 : 1;
+    }
 
     if (parser.isSet(checkContrastOption)) {
         const QStringList parts = parser.value(checkContrastOption).split(QLatin1Char(','));
