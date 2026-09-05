@@ -10,14 +10,20 @@ it; everything unproven says so.
 
 | | count |
 |---|---|
-| Passed | 29 |
+| Passed | 30 |
 | Failed | 2 |
 | Partial | 3 |
-| Not yet verified | 13 |
+| Not yet verified | 10 |
 
-The keyboard works: it raises itself, types into both kinds of client, themes
-live, and keeps one layer surface. The one outright failure is the memory
-target, which was a number I picked without evidence — see below.
+45 criteria: SPEC.md's 44 plus AC 4b, added when testing showed that "the
+surface stays mapped when retracted" and "the retracted keyboard does not
+swallow every touch" are two different claims and only one of them was written
+down.
+
+The keyboard works. It raises and retracts itself, types into both kinds of
+Wayland client, recolours live, and keeps exactly one layer surface. Both
+failures are targets I set without evidence — 25 MB of PSS and 800 ms to first
+paint — and both are corrected against measurements below rather than defended.
 
 ## Passed
 
@@ -116,6 +122,35 @@ The tuning is now compiled in: `QSG_RENDER_LOOP=basic` (nothing here animates),
 (the JavaScript is a hit test and a few branches). Worth 4.6 MB of both PSS and
 private dirty, and overridable from the environment.
 
+## Partial
+
+- **AC 2 (20 cycles)** — the claim is proven and has never once wavered: **1
+  layer surface created and 0 destroyed, in every run.** But the driver reaches
+  3–6 activate/deactivate cycles rather than 20, because the windows it needs
+  take longer to open than any fixed wait on a device this loaded. The counts are
+  unambiguous, so more cycles would restate rather than strengthen it — but the
+  AC says 20 and it has not seen 20.
+- **AC 20 (the current layout is visible without typing)** — switching is one
+  tap. "Visible" is satisfied only by convention: the layout keys show where you
+  can go, not where you are, exactly as every phone keyboard does. Honest to call
+  that partial rather than met.
+- **AC 29 (no dead zones)** — hit areas tessellate by construction, and taps land
+  on the intended key including on the centred nine-key rows that the clamping
+  exists for. Not swept across the whole panel.
+
+## Not yet verified
+
+AC 6 (survives compositor restart), 30 (multitouch — `tests/tap.py` drives one
+finger; two would need a second slot), 31 (slide-off cancels), 32 (long-press
+alternates), 33 (press feedback within one frame), 34 (modifier latching), 38
+(press → commit ≤ 50 ms), and 42–44 (mobileomarchy integration, deliberately
+untouched — three other sessions were editing that repo today; the change is
+written up in `packaging/mobileomarchy-integration.md` for review).
+
+30–34 are the touch-interaction criteria and want either a second uinput slot or
+a human thumb. Nothing about them is known to be broken; they are simply not
+tested, and this page does not count untested as passing.
+
 ## The contrast fallback is load-bearing, not a safety net
 
 Worth stating plainly because it surprised me: **all 22 themes need it.** Every
@@ -183,6 +218,25 @@ that were the test's own:
 
 The 5-cycle AC 2 result higher up this page stands — it was run separately, with
 activates confirmed at 5.
+
+## The harness is the flakiest part of this, and that is worth saying
+
+Across seven full runs, every single "product failure" this suite reported turned
+out to be its own bug, with two exceptions that were real and are now fixed (the
+`Top` layer and the sticky terminal layout). The list: testing squeekboard
+instead of the keyboard; terminal-layout coordinates at the letters layout;
+cycling focus onto a window that run never created; a probe reporting through a
+file that `XMLHttpRequest` never wrote; a probe made fullscreen, which in sway
+renders above the layer this keyboard was on; matching windows by an `app_id`
+that Qt never sets; and four separate fixed sleeps that were long enough once and
+not the next time.
+
+The pattern is one thing: **a test that does not assert its own preconditions
+will eventually measure something other than what it names.** The guards added in
+response — assert which process owns `sm.puri.OSK0` before believing a
+keystroke, poll for windows instead of sleeping, fail below five activates, and
+distinguish "the probe never opened" from "the probe saw nothing" — are worth
+more than the results they produced.
 
 ## Notes for whoever runs these next
 
