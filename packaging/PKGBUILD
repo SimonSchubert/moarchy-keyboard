@@ -3,9 +3,6 @@
 # Builds from the working tree above this file rather than fetching a tarball,
 # so an uncommitted change can be packaged and installed on the phone without
 # a release. Swap source=() for a git+https line once this has a repo.
-#
-# TODO: license. Set to 'custom' until moarchy-keyboard has a LICENSE file --
-# guessing a licence for someone else's project is not mine to do.
 
 pkgname=moarchy-keyboard
 pkgver=0.1.0
@@ -13,7 +10,7 @@ pkgrel=1
 pkgdesc="Themed on-screen keyboard for mobileomarchy (Qt6/QML, input-method-v2)"
 arch=('aarch64')
 url="https://github.com/SimonSchubert/moarchy-keyboard"
-license=('custom')
+license=('MIT')
 
 depends=(
   'qt6-base'
