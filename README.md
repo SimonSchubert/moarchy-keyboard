@@ -52,6 +52,28 @@ The keymap is **generated** at startup from every character the layouts declare,
 so a long-press `é`, a `€` or an em dash has a real keycode and types into a
 terminal — which has no text input to commit a string to.
 
+## Style
+
+This keyboard is one of three programs that draw the moarchy phone's UI, and it
+is the only one that is a standalone Qt app — the shell is quickshell plugins,
+the store is Python and GTK4. They cannot share code, so what they share is one
+contract and one palette:
+
+- **[moarchy `docs/style.md`](https://github.com/SimonSchubert/moarchy/blob/main/docs/style.md)**
+  — the type roles, the six colour roles, the four radii, the 44px touch-target
+  floor and the motion budget a Mali-400 at GLES 2.0 can afford. §H is the part
+  that binds this repo, restated in toolkit-neutral terms because there is no
+  `Style.space()` out here.
+- The palette comes from the theme `omarchy-theme-set` stages at
+  `~/.local/state/omarchy/current/theme/`, and every surface degrades to its
+  own defaults when that file is absent — themed by its presence, never broken
+  by its absence.
+
+AC 29 below is moarchy's E1 and E2 arrived at independently, from the other
+end: hit areas tessellate the panel, so the visible gap between two keys
+belongs to a key. The wording here stays as it is; the style doc points at it
+rather than renumbering it.
+
 ## Building
 
 Needs Qt6, `layer-shell-qt`, `libxkbcommon` and `wayland-scanner`. On Apple

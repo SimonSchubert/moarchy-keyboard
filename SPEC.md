@@ -238,6 +238,11 @@ Each is a claim that can be shown true or false on the phone.
     physical at `output * scale 2`, DSI-1, 60 Hz).
 29. **No dead zones.** Hit areas tessellate the panel — every touch inside it
     activates exactly one key. Visual gaps between keys belong to the nearest key.
+    This is moarchy's [style.md](https://github.com/SimonSchubert/moarchy/blob/main/docs/style.md)
+    E1–E2 reached from the other end: there, a drawn control that is bigger than
+    the control that answers is the failure; here, a gap that answers for
+    nothing is. Same rule, and a phone where one surface keeps it and the next
+    does not is worse than one where neither does.
 30. **Multi-touch.** A second finger landing while the first is still down
     registers both, in order. Fast typing must not drop keys.
 31. **Slide-off cancels.** A press that moves off its key before release emits
