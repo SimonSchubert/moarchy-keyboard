@@ -20,11 +20,15 @@
 // leaked surface stays mapped, so the keyboard never goes away. That bug is why
 // wvkbd is not the keyboard here, and reintroducing it would defeat the project.
 //
-// So retracting is three things that leave the surface alone:
+// So retracting is two things that leave the surface alone:
 //
-//   exclusive zone -> 0    the focused window takes the space back
-//   input region   -> off  touches fall through to whatever is underneath
-//   root item      -> invisible, so the scene graph has nothing to draw
+//   exclusive zone -> 0           the focused window takes the space back
+//   input region   -> the handle  every other touch falls through to whatever
+//                                 is underneath
+//
+// and QML swaps the keys for the restore handle. There is no third state where
+// the surface draws nothing at all: that was the state a phone could get stuck
+// in, with no keyboard and nothing to tap to ask for one (AC 49).
 class Panel : public QObject, public MainOwnedSingleton<Panel>
 {
     Q_OBJECT
@@ -33,16 +37,6 @@ class Panel : public QObject, public MainOwnedSingleton<Panel>
 
 
 public:
-    enum Mode {
-        Hidden,   // nothing drawn, nothing takes touch, no space reserved
-        Handle,   // only the restore handle: the keyboard was dismissed by hand
-                  // while a text field is still focused, and the platform emits
-                  // nothing when that field is tapped again -- so there has to
-                  // be something on screen to tap
-        Shown,    // the keyboard
-    };
-    Q_ENUM(Mode)
-
     // No default argument, so the QML engine cannot default-construct its own
     // instance instead of calling create(). See the static_assert below.
     explicit Panel(QObject *parent);
@@ -57,17 +51,18 @@ public:
     bool prepare(QString *error);
     bool load(const QUrl &source, QString *error);
 
-    // Declared here rather than beside Q_OBJECT: the property type has to be a
-    // name the compiler already knows, and Mode is declared just above.
-    Q_PROPERTY(Mode mode READ mode NOTIFY modeChanged)
+    // The whole of the panel's state. Main.qml draws the keys when it is true
+    // and the restore handle when it is false, so the two are exhaustive and
+    // exclusive by construction rather than by anyone remembering to keep them
+    // that way.
+    Q_PROPERTY(bool shown READ isShown NOTIFY shownChanged)
 
     // Read by Main.qml to inset the keys and the restore handle out of the
     // band. CONSTANT is accurate: main() applies any --gesture-strip-inset
     // before prepare(), and QML is not evaluated until load() after it.
     Q_PROPERTY(int stripInset READ stripInset CONSTANT)
 
-    Mode mode() const { return m_mode; }
-    bool isShown() const { return m_mode == Shown; }
+    bool isShown() const { return m_shown; }
 
     // Where QML has put the handle, in panel coordinates. Reported back so the
     // input region can be exactly that rectangle -- the rest of the surface has
@@ -105,19 +100,17 @@ public:
     QQuickView *view() const { return m_view; }
 
 public Q_SLOTS:
-    void setMode(Mode mode);
-    void setShown(bool shown) { setMode(shown ? Shown : Hidden); }
+    void setShown(bool shown);
 
 Q_SIGNALS:
-    void modeChanged();
+    void shownChanged();
     void showRequested();
 
 private:
     void applyVisibility();
 
     QQuickView *m_view = nullptr;
-    Mode m_mode = Hidden;
-    bool m_mapped = false;
+    bool m_shown = false;
     QRect m_handleRect;
     int m_backEdgeInset = -1;   // -1 until prepare() applies the default
     int m_bottomMargin = -1;

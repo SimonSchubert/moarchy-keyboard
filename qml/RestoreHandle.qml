@@ -3,7 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import moarchy
 
-// The tab that brings a dismissed keyboard back.
+// The tab that brings the keyboard back.
 //
 // It exists because of a gap in the platform, not because a keyboard wants
 // decoration. Dismissing the keyboard by gesture leaves the text field focused,
@@ -12,9 +12,15 @@ import moarchy
 // text state changed. So there is no event to wake up on, and without something
 // to tap the keyboard is unreachable until focus moves elsewhere.
 //
-// Which means this is only ever shown in exactly that state: dismissed by hand,
-// with a text input still active. Any other time it would be clutter, and the
-// panel draws nothing at all.
+// It was shown in exactly that state at first -- dismissed by hand, with a text
+// input still active -- on the grounds that any other time it would be clutter.
+// That had the trade backwards. Every other way of ending up without a keyboard
+// leaves nothing to tap just the same: an app that never advertises text input,
+// a terminal that holds it the whole time it is focused, a dismissal that
+// arrives before the state which was supposed to justify the handle. A phone
+// that cannot ask for a keyboard is worse than a pill in the corner of the
+// screen, so this is drawn whenever the keyboard is not (AC 49) and the whole
+// decision is one bool.
 Item {
     id: root
 

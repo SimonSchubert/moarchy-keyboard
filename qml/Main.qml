@@ -3,16 +3,17 @@ import moarchy
 
 // The panel's root.
 //
-// One surface serves three states -- the keyboard, the restore handle, and
-// nothing -- because the surface must never be unmapped once created (see the
-// note at the top of src/panel.h). So the root is a transparent Item and each
-// state paints its own background, rather than the root painting one that would
-// show through in the states that want nothing.
+// One surface serves both states -- the keyboard and the restore handle --
+// because the surface must never be unmapped once created (see the note at the
+// top of src/panel.h). So the root is a transparent Item and each state paints
+// its own background, rather than the root painting one that would show
+// through behind the handle.
+//
+// The two are one bool apart on purpose (AC 49): whenever the keyboard is not
+// on screen the handle is, so there is no arrangement of events that leaves the
+// phone with neither a keyboard nor a way to ask for one.
 Item {
     id: root
-
-    readonly property bool showingKeyboard: Panel.mode === Panel.Shown
-    readonly property bool showingHandle: Panel.mode === Panel.Handle
 
     // Omarchy's icon font, loaded once here rather than per key. Its family
     // name is read from the loader rather than assumed to be "omarchy", so a
@@ -26,7 +27,7 @@ Item {
     // ------------------------------------------------------------- keyboard
     Rectangle {
         anchors.fill: parent
-        visible: root.showingKeyboard
+        visible: Panel.shown
         color: Colors.panelBackground
 
         // A hairline against the app above, so the keyboard reads as a separate
@@ -58,7 +59,7 @@ Item {
     // --------------------------------------------------------------- handle
     RestoreHandle {
         id: handle
-        visible: root.showingHandle
+        visible: !Panel.shown
 
         // Bottom right, clear of both gesture bands. The strip's band is now
         // *inside* this surface rather than below it, so the margin has to

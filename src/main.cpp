@@ -11,7 +11,6 @@
 
 #include <QCommandLineParser>
 #include <QDir>
-#include <QElapsedTimer>
 #include <QColor>
 #include <QFile>
 #include <QGuiApplication>
@@ -430,88 +429,57 @@ int main(int argc, char *argv[])
     // --- Panel --------------------------------------------------------------
     Panel panel(nullptr);
 
-    // Visibility has two inputs: what the compositor says about text focus, and
-    // what someone asked for over D-Bus. A manual request -- the back gesture,
-    // or mobileomarchy-toggle-keyboard -- wins for a while, so the keyboard can
-    // be pushed out of the way without moving focus.
+    // Visibility is one bool, and every event that writes it is right here.
     //
-    // "For a while" is the hard part, and getting it wrong left the keyboard
-    // permanently stuck down: dismiss it with the back gesture and tapping the
-    // text field again did nothing, for ever. The override was cleared on
-    // activeChanged, which does not fire nearly often enough. It fires on a net
-    // change of the active flag, and moving focus from one text field to
-    // another coalesces deactivate and activate into one `done`, so the flag
-    // goes true -> true and nothing is signalled. Tapping the SAME field does
-    // not change it either.
+    //   a text input activated       up     the app asked for a keyboard
+    //   the text input deactivated   down   focus left the field
+    //   the handle was tapped        up     the deliberate way back
+    //   SetVisible over D-Bus        either the back gesture, or the toggle
     //
-    // So the override is cleared by any of:
-    //   * activate            -- a text input asked for a keyboard
-    //   * any `done`          -- the focused client said something about its
-    //                            text state, which is what tapping into a field
-    //                            produces
-    //   * the active flag changing, as before
+    // Nothing else reads or writes it: no override flag, no grace period, no
+    // timer (AC 50). What the keyboard is doing is the last of those four
+    // events and nothing more.
     //
-    // with a short grace period, so that the settling updates which arrive just
-    // after a hide do not immediately undo it. Erring towards showing is
-    // deliberate: a keyboard that reappears slightly too eagerly is a nuisance,
-    // and one that will not come back at all makes the phone unusable.
-    static bool manualOverride = false;
-    static bool manualWanted = false;
-    static QElapsedTimer sinceOverride;
-    constexpr int kOverrideGraceMs = 700;
-
-    auto applyVisibility = [&] {
-        const bool wanted = manualOverride ? manualWanted : inputMethod.isActive();
-
-        // Three states, not two. A keyboard dismissed by hand while a text
-        // field is still focused leaves the user with nothing to tap: the
-        // platform sends no event when an already-focused field is tapped
-        // again, so there is nothing to wake up on. That case -- and only that
-        // case -- shows a small handle instead of nothing at all.
-        const Panel::Mode mode = wanted            ? Panel::Shown
-                               : inputMethod.isActive() && manualOverride
-                                                   ? Panel::Handle
-                                                   : Panel::Hidden;
-        panel.setMode(mode);
-        osk.setVisible(wanted);
+    // The machinery that used to be here existed to guarantee that a dismissed
+    // keyboard could come back, and it could not make that guarantee. The
+    // platform emits nothing when an already-focused field is tapped again --
+    // zero input-method traffic under WAYLAND_DEBUG, because the client's text
+    // state did not change -- so the override was cleared on a grab-bag of
+    // signals after a grace period instead, which meant the keyboard both
+    // reappeared on its own while typing on a hardware keyboard and stayed
+    // down for ever in a terminal. The guarantee lives in one visible control
+    // now: the restore handle is on screen whenever the keyboard is not
+    // (AC 49), so a dismissal is allowed to simply stick.
+    const auto setShown = [&](bool shown, const char *why) {
+        if (panel.isShown() == shown)
+            return;
+        qCInfo(lcMain) << (shown ? "showing" : "hiding") << "--" << why;
+        panel.setShown(shown);
+        // Which comes straight back as visibleChanged -- the guard above is
+        // what turns that echo into a no-op.
+        osk.setVisible(shown);
     };
 
-    auto clearOverride = [&](const char *why) {
-        if (!manualOverride)
-            return;
-        if (sinceOverride.isValid() && sinceOverride.elapsed() < kOverrideGraceMs)
-            return;
-        qCInfo(lcMain) << "manual override cleared by" << why;
-        manualOverride = false;
-        applyVisibility();
-    };
-
-    QObject::connect(&inputMethod, &InputMethod::activeChanged, &app, [&] {
-        manualOverride = false;
-        applyVisibility();
-    });
-
+    // Every `activate`, not only the ones that change the active flag. Moving
+    // focus from one text field to another coalesces deactivate and activate
+    // into a single `done`, so the flag goes true -> true and activeChanged is
+    // never emitted -- which is why this is not driven from activeChanged
+    // alone.
     QObject::connect(&inputMethod, &InputMethod::activated, &app,
-                     [&] { clearOverride("activate"); });
+                     [&] { setShown(true, "a text input activated"); });
 
-    // The handle was tapped. This is the deliberate way back, so it clears the
-    // override outright rather than going through the grace period.
-    QObject::connect(&panel, &Panel::showRequested, &app, [&] {
-        qCInfo(lcMain) << "restore handle tapped";
-        manualOverride = false;
-        applyVisibility();
+    // The other edge, and only that edge: every rise is preceded by an
+    // `activate`, which the connection above already catches.
+    QObject::connect(&inputMethod, &InputMethod::activeChanged, &app, [&] {
+        if (!inputMethod.isActive())
+            setShown(false, "the text input deactivated");
     });
-    QObject::connect(&inputMethod, &InputMethod::stateApplied, &app,
-                     [&] { clearOverride("text-input state update"); });
 
-    QObject::connect(&osk, &OskService::visibleChanged, &app, [&] {
-        if (osk.visible() == panel.isShown())
-            return;
-        manualOverride = true;
-        manualWanted = osk.visible();
-        sinceOverride.start();
-        applyVisibility();
-    });
+    QObject::connect(&panel, &Panel::showRequested, &app,
+                     [&] { setShown(true, "the restore handle was tapped"); });
+
+    QObject::connect(&osk, &OskService::visibleChanged, &app,
+                     [&] { setShown(osk.visible(), "SetVisible over D-Bus"); });
 
     // --- QML ----------------------------------------------------------------
     if (parser.isSet(backEdgeOption)) {

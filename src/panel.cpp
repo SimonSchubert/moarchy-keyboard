@@ -40,7 +40,9 @@ constexpr int kDefaultPanelHeight = 200;
 // as a band of wallpaper below the keys. That was tried, and that is what it
 // looked like.
 //
-// The fix is ordering, not geometry: see the deferred map in Panel::setShown.
+// The fix was ordering, not geometry, and it was the layer: this surface is on
+// Top and the strip is on Overlay, and exclusive zones resolve layer by layer
+// from Overlay downwards. See the note beside setLayer in prepare().
 constexpr int kDefaultBottomMargin = 0;
 
 // The bottom band mobileomarchy's gesture strip owns, which this surface now
@@ -108,7 +110,8 @@ constexpr int kDefaultStripInset = 24;
 // width is a cheap price for never having a dead stripe.
 constexpr int kDefaultBackEdgeInset = 0;
 
-// The input region for a retracted keyboard: one pixel, in the corner.
+// The input region for a retracted keyboard until QML says where it put the
+// restore handle: one pixel, in the corner.
 //
 // Two wrong answers here, and the failure mode of both is the same and is
 // nasty -- an invisible wall across the bottom third of every app, swallowing
@@ -125,9 +128,10 @@ constexpr int kDefaultBackEdgeInset = 0;
 // therefore the first bug again.
 //
 // So: one real pixel, inside the surface, which cannot be clipped to nothing.
-// It costs a single dead pixel at the top-left corner of where the panel sits
-// while the keyboard is down, and in exchange the behaviour does not depend on
-// how a Qt internal treats out-of-bounds rectangles.
+// It costs a single dead pixel at the top-left corner of where the panel sits,
+// for the frames between mapping the surface and QML reporting the handle's
+// rectangle, and in exchange the behaviour does not depend on how a Qt internal
+// treats out-of-bounds rectangles.
 const QRegion &noInputRegion()
 {
     static const QRegion region(0, 0, 1, 1);
@@ -233,41 +237,44 @@ bool Panel::load(const QUrl &source, QString *error)
         return false;
     }
 
-    // NOT shown here.
+    // Mapped here, once, and never unmapped (AC 2, AC 51).
     //
-    // The surface is mapped on first use instead, by setShown. Mapping at
-    // startup put this keyboard ahead of mobileomarchy's gesture strip in the
-    // compositor's arrangement order, and a layer surface arranged first takes
-    // the screen edge -- which stranded the home pill above the keyboard.
-    // Deferring the map until a text field is focused guarantees the shell's
-    // surfaces are already arranged, so the strip keeps the edge and this
-    // keyboard is placed above it.
+    // It used to be deferred to the first show, on the theory that mapping at
+    // startup put this keyboard ahead of the shell's gesture strip in the
+    // compositor's arrangement order and let it take the screen edge. That was
+    // a race this surface should never have been in: the strip is on Overlay
+    // and this is on Top, and exclusive zones resolve layer by layer from
+    // Overlay downwards, so the strip keeps the edge whatever the map order is.
+    // Moving back to Top is what actually fixed it; the deferral only ever
+    // worked by hand and never from a session start.
     //
-    // AC 2 is unaffected and still exactly true: one surface created, none ever
-    // destroyed. It says the surface outlives every activate/deactivate cycle,
-    // not that it must exist before the first one.
-    qCInfo(lcPanel) << "panel prepared:" << m_view->width() << "x" << m_panelHeight
-                    << "(surface maps on first show)";
+    // And there is nothing left to defer for. The restore handle is on screen
+    // whenever the keyboard is not (AC 49), which means from the first frame,
+    // before any text input exists to trigger a first show.
+    //
+    // show() before applyVisibility(), not after. QWindow::setMask only reaches
+    // the compositor if a platform window exists; called earlier it is stored
+    // and quietly never applied, and an unapplied mask is an unset input
+    // region, which is the whole surface -- an invisible wall across the bottom
+    // third of the screen. show() creates the platform window synchronously,
+    // and nothing is committed until the first expose, so setting the region
+    // immediately after is in time.
+    m_view->show();
+    applyVisibility();
+    qCInfo(lcPanel) << "layer surface up:" << m_view->width() << "x" << m_panelHeight;
     return true;
 }
 
-void Panel::setMode(Mode mode)
+void Panel::setShown(bool shown)
 {
-    if (m_mode == mode)
+    if (m_shown == shown)
         return;
-    m_mode = mode;
+    m_shown = shown;
 
-    // First appearance of any kind maps the surface. Every later change only
-    // adjusts the input region, the exclusive zone and what QML draws -- the
-    // surface itself is never unmapped again.
-    if (m_mode != Hidden && !m_mapped) {
-        m_mapped = true;
-        m_view->show();
-        qCInfo(lcPanel) << "layer surface up:" << m_view->width() << "x" << m_panelHeight;
-    }
-
+    // Only three things ever change: the exclusive zone, the input region and
+    // which of the two QML draws. The surface itself is untouched.
     applyVisibility();
-    Q_EMIT modeChanged();
+    Q_EMIT shownChanged();
 }
 
 void Panel::setHandleRect(int x, int y, int width, int height)
@@ -277,7 +284,7 @@ void Panel::setHandleRect(int x, int y, int width, int height)
         return;
     m_handleRect = rect;
     qCDebug(lcPanel) << "handle rect ->" << rect;
-    if (m_mode == Handle)
+    if (!m_shown)
         applyVisibility();
 }
 
@@ -310,37 +317,28 @@ void Panel::applyVisibility()
     // panelHeight + bottomMargin, the applied margin is bottomMargin -
     // stripInset, and the difference is panelHeight + stripInset either way.
     if (layerShell)
-        layerShell->setExclusiveZone(m_mode == Shown ? m_panelHeight + m_stripInset : 0);
+        layerShell->setExclusiveZone(m_shown ? m_panelHeight + m_stripInset : 0);
 
-    // The input region follows the mode exactly. In Handle mode it is the
-    // handle and nothing else: the rest of the surface is still mapped and
-    // still transparent, and if it took touches it would be an invisible wall
-    // across the bottom of whatever is underneath.
-    switch (m_mode) {
-    case Shown:
+    // Retracted, the input region is the handle and nothing else: the rest of
+    // the surface is still mapped and still transparent, and if it took touches
+    // it would be an invisible wall across the bottom of whatever is
+    // underneath. noInputRegion() covers the frames before QML has reported
+    // where it put the handle.
+    if (m_shown)
         m_view->setMask(QRegion(m_backEdgeInset, 0,
                                 m_view->width() - m_backEdgeInset,
                                 m_view->height()));
-        break;
-    case Handle:
+    else
         m_view->setMask(m_handleRect.isValid() ? QRegion(m_handleRect)
                                                : noInputRegion());
-        break;
-    case Hidden:
-        m_view->setMask(noInputRegion());
-        break;
-    }
 
     QQuickItem *root = m_view->rootObject();
-    if (root)
-        root->setVisible(m_mode != Hidden);
 
     // Logged because "the panel says it is shown and the screen says it is
     // black" needs the intermediate facts to be separable: whether the root
     // item exists, whether it is visible, and whether it has a size. A root
     // with zero width paints nothing while every flag above it reads correct.
-    qCInfo(lcPanel) << "visibility ->"
-                    << (m_mode == Shown ? "shown" : m_mode == Handle ? "handle" : "hidden")
+    qCInfo(lcPanel) << "visibility ->" << (m_shown ? "keyboard" : "handle")
                     << "root" << (root ? "yes" : "MISSING")
                     << "rootVisible" << (root && root->isVisible())
                     << "rootSize" << (root ? root->width() : -1)

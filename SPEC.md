@@ -299,6 +299,30 @@ Each is a claim that can be shown true or false on the phone.
     and both the strip and the back edge are on `Overlay`, so they take their
     touches first — the same reason `kDefaultBackEdgeInset` is 0.
 
+### 4.9 Getting the keyboard back
+
+49. **The toggle is on screen whenever the keyboard is not.** With a text input
+    focused or without one, from the first frame after startup, and tapping it
+    raises the keyboard. There is no state in which the phone has neither a
+    keyboard nor a way to ask for one. *(It used to be shown in exactly one
+    state — dismissed by hand while a text input was still active — so every
+    other way of ending up without a keyboard left nothing to tap: a terminal
+    that holds text input the whole time it is focused, an app that stops
+    activating, a dismissal arriving before the state that justified the
+    handle.)*
+50. **Visibility is one bool, written by four events and nothing else:** a text
+    input activating (up), the text input deactivating (down), the handle being
+    tapped (up), and `SetVisible` on D-Bus (either). No override flag, no grace
+    period, no timer and no rule that reads a clock. What the keyboard is doing
+    is therefore a function of the last of those four events, and a dismissal
+    holds until the next one rather than until a timer expires — which AC 49 is
+    what makes safe.
+51. **The surface is mapped at startup**, not on first show, so AC 2 is now
+    literally true rather than true-in-spirit. *(The deferred map was an attempt
+    at the gesture strip's ordering that the `Top` layer fixed properly, and
+    AC 49 needs the handle up before any text input exists, so there is nothing
+    left to defer for.)*
+
 ---
 
 ## 5. The two input paths, in detail

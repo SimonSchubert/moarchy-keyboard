@@ -13,14 +13,22 @@ it; everything unproven says so.
 | Passed | 41 |
 | Failed | 2 |
 | Partial | 3 |
-| Not yet verified | 4 |
+| Not yet verified | 7 |
 
-49 criteria: SPEC.md's 48 plus AC 4b, added when testing showed that "the
+52 criteria: SPEC.md's 51 plus AC 4b, added when testing showed that "the
 surface stays mapped when retracted" and "the retracted keyboard does not
 swallow every touch" are two different claims and only one of them was written
 down.
 
-These add up to 50 against 49 criteria because **AC 2 is deliberately in two
+ACs 49–51 arrived after this run — the restore handle is now shown whenever the
+keyboard is not, and the visibility logic that needed it is gone. The build is
+**installed on the phone** (2026-09-06), and one screenshot shows the handle
+drawn on the home screen with no text input anywhere, which is the state the old
+rule could never show it in. That is one frame, not a measurement pass: each of
+the three still has parts nobody has looked at, so all three stay under "Not yet
+verified" rather than being promoted on the strength of a single picture.
+
+These add up to 53 against 52 criteria because **AC 2 is deliberately in two
 places**: what it claims about surfaces — one created, none destroyed — passes
 outright and always has, while the 20 cycles it asks for have never been
 reached. Splitting it would lose one half or the other.
@@ -195,9 +203,29 @@ AC 6 (survives compositor restart) and 42–44 (mobileomarchy integration, delib
 untouched — three other sessions were editing that repo today; the change is
 written up in `packaging/mobileomarchy-integration.md` for review).
 
+ACs 49–51, which landed after this run. The build is on the phone and one
+screenshot has been taken; what each still wants:
+
+- **49** — the handle is on screen whenever the keyboard is not. The half that
+  the old rule could not do is **shown**: a screenshot of the home screen, no
+  text field focused anywhere, handle in the bottom-right corner. Still wanted:
+  that tapping it raises the keyboard, and the same with a text input focused.
+- **50** — visibility is one bool written by four events. Wants the log line
+  from each of the four, and a dismissal that stays dismissed across a
+  hardware-keyboard keystroke, which used to raise it again. Nothing measured.
+- **51** — the surface is mapped at startup rather than on first show. The same
+  screenshot is partial evidence for both halves at once — the handle was drawn
+  before any text input had ever existed in that process, so the surface was
+  mapped at startup, and the home pill is still at the screen edge beneath it.
+  Still wanted: `swaymsg -t get_tree` saying so in numbers, with the keyboard's
+  exclusive zone at 0. This is the one with a real risk attached: the deferred
+  map was an attempt at that ordering, and the argument for removing it is that
+  the `Top` layer already settles it (see 0698e49), not that it was retested.
+
 Every touch and latency criterion is now answered. What is left is AC 6, which
 needs a compositor restart that would disturb other sessions on this shared
-device, and the integration criteria, which are deliberately unapplied.
+device, the integration criteria, which are deliberately unapplied, and the
+three above.
 
 ## The contrast fallback is load-bearing, not a safety net
 
@@ -448,15 +476,28 @@ The input method now also emits `activated()` on every activate and
 `stateApplied()` on every `done`, and the override clears on any of them after a
 short grace period.
 
+*Superseded.* That fix bought the recovery with a rule nobody could predict: the
+override also cleared on `done`, so every surrounding-text update — a keystroke
+on a hardware keyboard, a cursor move — raised the keyboard again, while a
+terminal that never sends one kept it down. The override, its grace period and
+`stateApplied()` are all gone (AC 50). What replaced them is below.
+
 **And the platform gives nothing when an already-focused field is tapped.**
 Measured with `WAYLAND_DEBUG`: zero input-method traffic, because nothing about
 the client's text state changed. A terminal is the worst case, since it holds
 text input the whole time it is focused. There is no event to wake on, so the
-keyboard grew a **restore handle** — a small pill, shown in exactly one state
-(dismissed by hand with a text input still active) and nothing at all otherwise.
-That gave the surface a third mode: Handle reserves no space and takes touch
-only in the handle's own rectangle, which QML reports back so the rest of the
-surface cannot become an invisible wall over the app.
+keyboard grew a **restore handle** — a small pill, shown at first in exactly one
+state (dismissed by hand with a text input still active) and nothing at all
+otherwise. It reserves no space and takes touch only in the handle's own
+rectangle, which QML reports back so the rest of the surface cannot become an
+invisible wall over the app.
+
+*And then in every state where the keyboard is down (AC 49).* One state was the
+wrong bet: it required knowing, at the moment of dismissal, that this particular
+dismissal was the recoverable kind — and every other way to end up without a
+keyboard left nothing to tap. Shown unconditionally it is also what let the
+visibility rules collapse to a single bool, because "the keyboard might not come
+back" stopped being a state the code had to prevent.
 
 **Geometry.** Keys were 36 wide by 75 tall — more than twice as tall as wide.
 The panel is now 200 logical pixels rather than 300, giving 32×50 on a four-row
