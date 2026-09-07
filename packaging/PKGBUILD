@@ -6,7 +6,16 @@
 
 pkgname=moarchy-keyboard
 pkgver=0.1.0
-pkgrel=1
+# 2, for AC 52 -- the handle moving to Overlay while the keyboard is retracted,
+# so moarchy's own overlays stop drawing over the one control that brings the
+# keyboard back.
+#
+# The bump is the point rather than bookkeeping. moarchy pins this repo by
+# commit, so its manifest can name the fix without the package version moving
+# -- and a phone already holding 0.1.0-1 compares versions, not contents, and
+# would never be offered it. An image would have hidden that completely,
+# because it installs fresh.
+pkgrel=2
 pkgdesc="Themed on-screen keyboard for mobileomarchy (Qt6/QML, input-method-v2)"
 arch=('aarch64')
 url="https://github.com/SimonSchubert/moarchy-keyboard"
