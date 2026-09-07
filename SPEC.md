@@ -327,6 +327,21 @@ Each is a claim that can be shown true or false on the phone.
     at the gesture strip's ordering that the `Top` layer fixed properly, and
     AC 49 needs the handle up before any text input exists, so there is nothing
     left to defer for.)*
+52. **The toggle stays reachable when a shell overlay is up.** While the
+    keyboard is retracted the surface sits on `Overlay`; it returns to `Top`
+    the moment the keyboard is shown. *(This panel is on `Top` for the reason
+    §4.6 gives, and moarchy's own surfaces — the app drawer, Settings, the
+    theme picker — are on `Top` too and map later, so they drew over the handle
+    and took the touches meant for it. That makes AC 49 false in precisely the
+    case it exists for: with the drawer open and the keyboard dismissed, its
+    search field is focused, tapping it emits nothing because no text state
+    changed, and the one control that would bring the keyboard back is behind
+    the drawer. Retracted, this costs nothing to move — the input region is
+    already the handle alone and the exclusive zone is already zero — and
+    shown, the ordering the gesture strip depends on is exactly what it was.
+    `zwlr_layer_surface_v1.set_layer` since version 2 changes layer without
+    remapping, which §4.6 already names as the right tool for the fullscreen
+    case.)*
 
 ---
 

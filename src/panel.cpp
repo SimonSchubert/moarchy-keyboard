@@ -319,6 +319,29 @@ void Panel::applyVisibility()
     if (layerShell)
         layerShell->setExclusiveZone(m_shown ? m_panelHeight + m_stripInset : 0);
 
+    // AC 52. Retracted, this surface is the handle and nothing else, and it has
+    // to outrank moarchy's overlays: the app drawer, Settings and the theme
+    // picker are all on Top and map after us, so they drew over the handle and
+    // took its touches.
+    //
+    // That breaks AC 49 in the one case it was written for. Open the drawer,
+    // dismiss the keyboard, and its search field is still focused -- so tapping
+    // it emits no input-method traffic at all, because nothing about the
+    // client's text state changed, and the only control that could bring the
+    // keyboard back is behind the sheet.
+    //
+    // Only while retracted. Shown, we go back to Top and the ordering the
+    // gesture strip depends on (see the essay by setLayer in prepare()) is
+    // exactly what it was. Nothing else has to move: retracted, the input
+    // region below is already the handle alone and the exclusive zone above is
+    // already zero, so being on Overlay costs the app underneath nothing.
+    //
+    // set_layer without a remap is legal from layer-shell v2, which is the tool
+    // prepare() already names for the fullscreen case.
+    if (layerShell)
+        layerShell->setLayer(m_shown ? LayerShellQt::Window::LayerTop
+                                     : LayerShellQt::Window::LayerOverlay);
+
     // Retracted, the input region is the handle and nothing else: the rest of
     // the surface is still mapped and still transparent, and if it took touches
     // it would be an invisible wall across the bottom of whatever is
