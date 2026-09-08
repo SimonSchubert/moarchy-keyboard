@@ -316,12 +316,13 @@ Each is a claim that can be shown true or false on the phone.
     activating, a dismissal arriving before the state that justified the
     handle.)*
 50. **Visibility is one bool, written by four events and nothing else:** a text
-    input activating (up), the text input deactivating (down), the handle being
-    tapped (up), and `SetVisible` on D-Bus (either). No override flag, no grace
-    period, no timer and no rule that reads a clock. What the keyboard is doing
-    is therefore a function of the last of those four events, and a dismissal
-    holds until the next one rather than until a timer expires — which AC 49 is
-    what makes safe.
+    input activating (up), the text input deactivating (down, after AC 53's
+    delay), the handle being tapped (up), and `SetVisible` on D-Bus (either).
+    No override flag, no grace period, and no clock but AC 53's — which delays
+    one of these four events and cannot invent a fifth. What the keyboard is
+    doing is therefore a function of the last of those four events, and a
+    dismissal holds until the next one rather than until a timer expires —
+    which AC 49 is what makes safe.
 51. **The surface is mapped at startup**, not on first show, so AC 2 is now
     literally true rather than true-in-spirit. *(The deferred map was an attempt
     at the gesture strip's ordering that the `Top` layer fixed properly, and
@@ -342,6 +343,47 @@ Each is a claim that can be shown true or false on the phone.
     `zwlr_layer_surface_v1.set_layer` since version 2 changes layer without
     remapping, which §4.6 already names as the right tool for the fullscreen
     case.)*
+
+### 4.10 Retracting without churn
+
+53. **A retract that is immediately reversed never reaches the screen.** The
+    text input deactivating arms a single-shot timer — 350 ms by default,
+    `--retract-delay` to change it — and the keyboard goes down when it fires.
+    Any of AC 50's other three events cancels it first. Moving focus between
+    two things that both want a keyboard therefore costs no reflow at all
+    instead of two, and moving to something that wants none still puts the
+    keyboard away, once, a third of a second later.
+
+    *Why there is a clock here at all.* Retracting sets the exclusive zone to
+    0, so sway hands 200 logical px back and every window on the screen relays
+    out; raising it takes them away again. On a phone that runs one app per
+    workspace, switching from one text app to another is deactivate → down →
+    reflow → activate → up → reflow, and the app visibly jumps twice on its way
+    to the state it started in. The same two land on every app-drawer open from
+    a text app, because the drawer takes the seat's keyboard before its own
+    search field asks for one.
+
+    *Why this is not the machinery AC 50 removed.* That was an override flag
+    cleared on a grab-bag of signals after a grace period, and its steady state
+    depended on the clock: the keyboard came back on its own while a hardware
+    keyboard was in use, and stayed down for ever in a terminal. This timer
+    changes no steady state. Once it has fired or been cancelled the bool is
+    exactly what AC 50's four events say it is; all it decides is how long the
+    down edge waits, and only until the next event of any kind.
+
+    *350 ms is a starting value, not a measurement.* It has to cover the round
+    trip between one client losing text focus and the next one asking for a
+    keyboard, on this SoC, and nobody has timed that gap. It is a command-line
+    option so the phone can answer rather than a rebuild; RESULTS.md records
+    what it answered. Too short and the churn comes back; too long and a
+    keyboard visibly lingers over an app that wants none.
+
+    → With a text app focused, switching to another text app leaves the app's
+    geometry unchanged — `swaymsg -t get_tree` reports the same `rect` before
+    and after — and the journal carries `retract cancelled` with no `hiding`
+    between them. The falsifier is the other direction: switching to an app
+    with no text input must still log `hiding -- the text input deactivated`
+    exactly once, within the delay plus a frame.
 
 ---
 

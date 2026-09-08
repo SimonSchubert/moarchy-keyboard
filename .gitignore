@@ -1,3 +1,12 @@
 build/
 .cache/
 compile_commands.json
+
+# makepkg's own tree, from packaging/PKGBUILD: build-pkg is its cmake dir, pkg
+# and src are fakeroot's staging, and the .pkg.tar.xz is the artifact itself.
+# All four appear next to the recipe rather than under build/, so the existing
+# rule misses them and `git add -A` sweeps in a compiled binary.
+build-pkg/
+packaging/pkg/
+packaging/src/
+packaging/*.pkg.tar.*

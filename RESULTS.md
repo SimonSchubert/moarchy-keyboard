@@ -12,10 +12,10 @@ it; everything unproven says so.
 |---|---|
 | Passed | 41 |
 | Failed | 2 |
-| Partial | 3 |
-| Not yet verified | 7 |
+| Partial | 4 |
+| Not yet verified | 8 |
 
-52 criteria: SPEC.md's 51 plus AC 4b, added when testing showed that "the
+54 criteria: SPEC.md's 53 plus AC 4b, added when testing showed that "the
 surface stays mapped when retracted" and "the retracted keyboard does not
 swallow every touch" are two different claims and only one of them was written
 down.
@@ -28,7 +28,12 @@ rule could never show it in. That is one frame, not a measurement pass: each of
 the three still has parts nobody has looked at, so all three stay under "Not yet
 verified" rather than being promoted on the strength of a single picture.
 
-These add up to 53 against 52 criteria because **AC 2 is deliberately in two
+ACs 52 and 53 arrived later still and have never been in these counts at all —
+52 with the retracted handle's move to `Overlay`, 53 with the retract delay.
+Both are below under "Not yet verified"; the count of 7 this table used to
+carry was stale by one before 53 was written.
+
+These add up to 55 against 54 criteria because **AC 2 is deliberately in two
 places**: what it claims about surfaces — one created, none destroyed — passes
 outright and always has, while the 20 cycles it asks for have never been
 reached. Splitting it would lose one half or the other.
@@ -196,6 +201,40 @@ private dirty, and overridable from the environment.
 - **AC 29 (no dead zones)** — hit areas tessellate by construction, and taps land
   on the intended key including on the centred nine-key rows that the clamping
   exists for. Not swept across the whole panel.
+- **AC 53 (a reversed retract never reaches the screen)** — measured on the
+  phone 2026-09-08, with a negative control, and the no-churn half passes
+  outright. Two `foot` windows, focus moved from one to the other with the
+  keyboard up, counting `set_exclusive_zone` on the wire under `WAYLAND_DEBUG`:
+
+  | | zones set across the switch |
+  |---|---|
+  | default, 350 ms | **0** — `(count: 0)` |
+  | `--retract-delay 0` | **2** — `set_exclusive_zone(0)`, then `(224)` |
+
+  The control is what makes the zero mean anything. `Visible` reads `true` on
+  both sides of the switch in *both* builds, because the old one settles back
+  up within the second — so the D-Bus property cannot tell the two apart, and
+  an earlier run of this check proved nothing while looking green. The wire
+  can: 0 and 224 are the retract and the raise, one reflow of every window on
+  the screen each. Qt's own log lines are no use here either; nothing a sway
+  `exec` starts reaches the journal, whatever `QT_LOGGING_RULES` says.
+
+  Also seen, unmeasured: with both text windows closed the keyboard still goes
+  down (`Visible` `b false`), so the debounce does let go. Still wanted, and
+  what keeps this partial rather than passed:
+
+  - the timing halves — that it is *delayed* and not merely conditional, that
+    it hides exactly once. `tests/acceptance.sh`'s AC 53 section does this at
+    `--retract-delay 2000`, where the margin beats a `busctl` round trip; it
+    has not been run.
+  - whether 350 ms is the right number for a slower pair than two `foot`
+    windows that are both already open — an app being launched, a GTK client
+    starting cold. It covers this pair with room to spare and nobody has found
+    the pair it does not cover.
+  - `--retract-delay 0` is the nearest thing to the old immediate hide and not
+    the same thing: a zero timer fires on the next event-loop turn, so an
+    activate already queued behind the deactivate can still beat it. It
+    reproduced the churn here, which is all this control needed.
 
 ## Not yet verified
 
@@ -222,10 +261,18 @@ screenshot has been taken; what each still wants:
   map was an attempt at that ordering, and the argument for removing it is that
   the `Top` layer already settles it (see 0698e49), not that it was retested.
 
+**AC 52** (the retracted handle sits on `Overlay` so a shell overlay cannot
+cover it) landed after this run and was never recorded here either way. It wants
+the drawer opened over a dismissed keyboard, the handle tapped, and the keyboard
+coming up in front of the drawer — plus `swaymsg -t get_tree` showing the layer
+change without a remap.
+
+AC 53's remaining halves are under "Partial" above.
+
 Every touch and latency criterion is now answered. What is left is AC 6, which
 needs a compositor restart that would disturb other sessions on this shared
 device, the integration criteria, which are deliberately unapplied, and the
-three above.
+four above.
 
 ## The contrast fallback is load-bearing, not a safety net
 

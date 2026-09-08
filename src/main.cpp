@@ -20,6 +20,7 @@
 #include <QQuickView>
 #include <QQuickWindow>
 #include <QStandardPaths>
+#include <QTimer>
 #include <functional>
 #include <QTextStream>
 
@@ -166,6 +167,15 @@ int main(int argc, char *argv[])
                        "below the keys. The keys do not move. Default 24."),
         QStringLiteral("px"));
     parser.addOption(stripInsetOption);
+
+    QCommandLineOption retractDelayOption(
+        QStringList { QStringLiteral("retract-delay") },
+        QStringLiteral("Milliseconds to wait after a text input deactivates "
+                       "before the keyboard goes down. Any other visibility "
+                       "event during the wait cancels it (AC 53). Default "
+                       "350."),
+        QStringLiteral("ms"));
+    parser.addOption(retractDelayOption);
 
     QCommandLineOption checkLayoutsOption(
         QStringList { QStringLiteral("check-layouts") },
@@ -429,16 +439,45 @@ int main(int argc, char *argv[])
     // --- Panel --------------------------------------------------------------
     Panel panel(nullptr);
 
+    int retractDelayMs = 350;
+    if (parser.isSet(retractDelayOption)) {
+        bool ok = false;
+        const int ms = parser.value(retractDelayOption).toInt(&ok);
+        if (!ok || ms < 0)
+            return fail(QStringLiteral("bad --retract-delay"),
+                        parser.value(retractDelayOption));
+        retractDelayMs = ms;
+    }
+
+    // AC 53. The only clock in this program, and it delays exactly one edge.
+    //
+    // Retracting hands 200 logical px back to the focused window, so every
+    // window on the screen relays out -- and raising takes them away again.
+    // A workspace switch between two text apps is therefore down, reflow, up,
+    // reflow, and the app jumps twice on its way back to the state it began
+    // in. Waiting a moment before going down means the activate that is
+    // already on its way cancels the whole round trip.
+    //
+    // Not the machinery AC 50 removed: that was an override flag whose steady
+    // state depended on a clock, so a keyboard could come back on its own or
+    // stay down for ever. Nothing here survives its own timeout. Once this has
+    // fired or been cancelled, the bool is what the four events below say it
+    // is; all it decides is how long the down edge waits.
+    QTimer retract;
+    retract.setSingleShot(true);
+    retract.setInterval(retractDelayMs);
+
     // Visibility is one bool, and every event that writes it is right here.
     //
     //   a text input activated       up     the app asked for a keyboard
-    //   the text input deactivated   down   focus left the field
+    //   the text input deactivated   down   focus left the field, after the
+    //                                       retract delay above
     //   the handle was tapped        up     the deliberate way back
     //   SetVisible over D-Bus        either the back gesture, or the toggle
     //
-    // Nothing else reads or writes it: no override flag, no grace period, no
-    // timer (AC 50). What the keyboard is doing is the last of those four
-    // events and nothing more.
+    // Nothing else reads or writes it: no override flag, no grace period
+    // (AC 50). What the keyboard is doing is the last of those four events and
+    // nothing more.
     //
     // The machinery that used to be here existed to guarantee that a dismissed
     // keyboard could come back, and it could not make that guarantee. The
@@ -451,6 +490,16 @@ int main(int argc, char *argv[])
     // now: the restore handle is on screen whenever the keyboard is not
     // (AC 49), so a dismissal is allowed to simply stick.
     const auto setShown = [&](bool shown, const char *why) {
+        // Before the early return, not after, and that ordering is the whole
+        // point of AC 53. The case this exists for is an activate arriving
+        // while the keyboard is still up with a retract pending: the state
+        // does not change, so the guard below returns -- and a cancel written
+        // under it would never run. The keyboard would drop 350 ms after being
+        // told to stay, which is worse than the churn it replaced.
+        if (retract.isActive()) {
+            retract.stop();
+            qCInfo(lcMain) << "retract cancelled --" << why;
+        }
         if (panel.isShown() == shown)
             return;
         qCInfo(lcMain) << (shown ? "showing" : "hiding") << "--" << why;
@@ -470,10 +519,17 @@ int main(int argc, char *argv[])
 
     // The other edge, and only that edge: every rise is preceded by an
     // `activate`, which the connection above already catches.
+    //
+    // Armed rather than applied (AC 53). Restarting an already-running timer
+    // is the right answer to a second deactivate -- the wait is measured from
+    // the last thing that happened, not the first.
     QObject::connect(&inputMethod, &InputMethod::activeChanged, &app, [&] {
         if (!inputMethod.isActive())
-            setShown(false, "the text input deactivated");
+            retract.start();
     });
+
+    QObject::connect(&retract, &QTimer::timeout, &app,
+                     [&] { setShown(false, "the text input deactivated"); });
 
     QObject::connect(&panel, &Panel::showRequested, &app,
                      [&] { setShown(true, "the restore handle was tapped"); });
