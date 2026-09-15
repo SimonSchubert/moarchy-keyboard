@@ -20,7 +20,6 @@
 #include <QQuickView>
 #include <QQuickWindow>
 #include <QStandardPaths>
-#include <QTimer>
 #include <functional>
 #include <QTextStream>
 
@@ -167,15 +166,6 @@ int main(int argc, char *argv[])
                        "below the keys. The keys do not move. Default 24."),
         QStringLiteral("px"));
     parser.addOption(stripInsetOption);
-
-    QCommandLineOption retractDelayOption(
-        QStringList { QStringLiteral("retract-delay") },
-        QStringLiteral("Milliseconds to wait after a text input deactivates "
-                       "before the keyboard goes down. Any other visibility "
-                       "event during the wait cancels it (AC 53). Default "
-                       "350."),
-        QStringLiteral("ms"));
-    parser.addOption(retractDelayOption);
 
     QCommandLineOption checkLayoutsOption(
         QStringList { QStringLiteral("check-layouts") },
@@ -430,76 +420,50 @@ int main(int argc, char *argv[])
 
     OskService osk;
     if (!osk.registerOnBus(&error)) {
-        // Not fatal: the keyboard still raises and retracts itself, which is how
-        // it is used 99% of the time. Only the manual toggle is lost, and saying
-        // so beats dying.
+        // Not fatal, but it now costs more than it did: with text focus no
+        // longer raising the keyboard (AC 50), this bus name is one of the two
+        // ways it moves at all, and the one the back gesture uses. What is
+        // left without it is the restore handle, which is still enough to type
+        // -- so saying so beats dying.
         qCWarning(lcMain).noquote() << "no D-Bus toggle:" << error;
     }
 
     // --- Panel --------------------------------------------------------------
     Panel panel(nullptr);
 
-    int retractDelayMs = 350;
-    if (parser.isSet(retractDelayOption)) {
-        bool ok = false;
-        const int ms = parser.value(retractDelayOption).toInt(&ok);
-        if (!ok || ms < 0)
-            return fail(QStringLiteral("bad --retract-delay"),
-                        parser.value(retractDelayOption));
-        retractDelayMs = ms;
-    }
-
-    // AC 53. The only clock in this program, and it delays exactly one edge.
+    // Visibility is one bool, and two events write it. Both are a person
+    // asking:
     //
-    // Retracting hands 200 logical px back to the focused window, so every
-    // window on the screen relays out -- and raising takes them away again.
-    // A workspace switch between two text apps is therefore down, reflow, up,
-    // reflow, and the app jumps twice on its way back to the state it began
-    // in. Waiting a moment before going down means the activate that is
-    // already on its way cancels the whole round trip.
+    //   the handle was tapped        up     the only way up
+    //   SetVisible over D-Bus        either the back gesture, or $mod+i
     //
-    // Not the machinery AC 50 removed: that was an override flag whose steady
-    // state depended on a clock, so a keyboard could come back on its own or
-    // stay down for ever. Nothing here survives its own timeout. Once this has
-    // fired or been cancelled, the bool is what the four events below say it
-    // is; all it decides is how long the down edge waits.
-    QTimer retract;
-    retract.setSingleShot(true);
-    retract.setInterval(retractDelayMs);
-
-    // Visibility is one bool, and every event that writes it is right here.
+    // Nothing else reads or writes it. No override flag, no grace period, and
+    // no clock at all (AC 50) -- so what the keyboard is doing is the last
+    // thing somebody asked it to do, and nothing about where text focus
+    // happens to be.
     //
-    //   a text input activated       up     the app asked for a keyboard
-    //   the text input deactivated   down   focus left the field, after the
-    //                                       retract delay above
-    //   the handle was tapped        up     the deliberate way back
-    //   SetVisible over D-Bus        either the back gesture, or the toggle
+    // **Text focus does not raise this keyboard.** It used to: an `activate`
+    // put it up and a `deactivate` took it down after a delay, on the
+    // reasoning that an app asking for text input is an app asking for a
+    // keyboard. On a phone those are not the same thing. A keyboard that
+    // appears whenever something takes focus appears when the app drawer's
+    // search field does, when a terminal is focused for any reason at all, and
+    // over half the screen each time -- and it went down on its own just as
+    // often, which is the half that is worse, because it moves a layout under
+    // a thumb that is already on its way to a key.
     //
-    // Nothing else reads or writes it: no override flag, no grace period
-    // (AC 50). What the keyboard is doing is the last of those four events and
-    // nothing more.
+    // What makes that safe is AC 49, which stops being a convenience here and
+    // becomes the whole contract: the restore handle is on screen whenever the
+    // keyboard is not, from the first frame after startup, and AC 52 keeps it
+    // above the shell's own overlays. There is no state in which the phone has
+    // neither a keyboard nor a way to ask for one -- and with nothing else
+    // writing the bool, a dismissal now sticks until a person ends it.
     //
-    // The machinery that used to be here existed to guarantee that a dismissed
-    // keyboard could come back, and it could not make that guarantee. The
-    // platform emits nothing when an already-focused field is tapped again --
-    // zero input-method traffic under WAYLAND_DEBUG, because the client's text
-    // state did not change -- so the override was cleared on a grab-bag of
-    // signals after a grace period instead, which meant the keyboard both
-    // reappeared on its own while typing on a hardware keyboard and stayed
-    // down for ever in a terminal. The guarantee lives in one visible control
-    // now: the restore handle is on screen whenever the keyboard is not
-    // (AC 49), so a dismissal is allowed to simply stick.
+    // `InputMethod` stays, and is not vestigial: it is how text is committed,
+    // and KeyRouter reads `isActive()` to decide whether a key leaves as text
+    // through zwp_input_method_v2 or as a raw keysym through the virtual
+    // keyboard.
     const auto setShown = [&](bool shown, const char *why) {
-        // Before the early return, not after, and that ordering is the whole
-        // point of AC 53. The case this exists for is an activate arriving
-        // while the keyboard is still up with a retract pending: the state
-        // does not change, so the guard below returns -- and a cancel written
-        // under it would never run. The keyboard would drop 350 ms after being
-        // told to stay, which is worse than the churn it replaced.
-        if (retract.isActive()) {
-            retract.stop();
-            qCInfo(lcMain) << "retract cancelled --" << why;
-        }
         if (panel.isShown() == shown)
             return;
         qCInfo(lcMain) << (shown ? "showing" : "hiding") << "--" << why;
@@ -508,28 +472,6 @@ int main(int argc, char *argv[])
         // what turns that echo into a no-op.
         osk.setVisible(shown);
     };
-
-    // Every `activate`, not only the ones that change the active flag. Moving
-    // focus from one text field to another coalesces deactivate and activate
-    // into a single `done`, so the flag goes true -> true and activeChanged is
-    // never emitted -- which is why this is not driven from activeChanged
-    // alone.
-    QObject::connect(&inputMethod, &InputMethod::activated, &app,
-                     [&] { setShown(true, "a text input activated"); });
-
-    // The other edge, and only that edge: every rise is preceded by an
-    // `activate`, which the connection above already catches.
-    //
-    // Armed rather than applied (AC 53). Restarting an already-running timer
-    // is the right answer to a second deactivate -- the wait is measured from
-    // the last thing that happened, not the first.
-    QObject::connect(&inputMethod, &InputMethod::activeChanged, &app, [&] {
-        if (!inputMethod.isActive())
-            retract.start();
-    });
-
-    QObject::connect(&retract, &QTimer::timeout, &app,
-                     [&] { setShown(false, "the text input deactivated"); });
 
     QObject::connect(&panel, &Panel::showRequested, &app,
                      [&] { setShown(true, "the restore handle was tapped"); });

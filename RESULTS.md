@@ -201,40 +201,20 @@ private dirty, and overridable from the environment.
 - **AC 29 (no dead zones)** — hit areas tessellate by construction, and taps land
   on the intended key including on the centred nine-key rows that the clamping
   exists for. Not swept across the whole panel.
-- **AC 53 (a reversed retract never reaches the screen)** — measured on the
-  phone 2026-09-08, with a negative control, and the no-churn half passes
-  outright. Two `foot` windows, focus moved from one to the other with the
-  keyboard up, counting `set_exclusive_zone` on the wire under `WAYLAND_DEBUG`:
+- **AC 53 is gone**, 2026-09-15, with the mechanism it described. It delayed
+  the down edge of "the text input deactivated", and AC 50 no longer has that
+  event: text focus writes nothing. The measurement it rested on stands as
+  history rather than as a criterion — with `--retract-delay 0` a focus change
+  between two `foot` windows set `set_exclusive_zone` twice on the wire and at
+  350 ms it set it none, which is what made the debounce worth having while
+  focus still drove the panel. Nothing reflows on a focus change now because
+  nothing moves on one.
 
-  | | zones set across the switch |
-  |---|---|
-  | default, 350 ms | **0** — `(count: 0)` |
-  | `--retract-delay 0` | **2** — `set_exclusive_zone(0)`, then `(224)` |
-
-  The control is what makes the zero mean anything. `Visible` reads `true` on
-  both sides of the switch in *both* builds, because the old one settles back
-  up within the second — so the D-Bus property cannot tell the two apart, and
-  an earlier run of this check proved nothing while looking green. The wire
-  can: 0 and 224 are the retract and the raise, one reflow of every window on
-  the screen each. Qt's own log lines are no use here either; nothing a sway
-  `exec` starts reaches the journal, whatever `QT_LOGGING_RULES` says.
-
-  Also seen, unmeasured: with both text windows closed the keyboard still goes
-  down (`Visible` `b false`), so the debounce does let go. Still wanted, and
-  what keeps this partial rather than passed:
-
-  - the timing halves — that it is *delayed* and not merely conditional, that
-    it hides exactly once. `tests/acceptance.sh`'s AC 53 section does this at
-    `--retract-delay 2000`, where the margin beats a `busctl` round trip; it
-    has not been run.
-  - whether 350 ms is the right number for a slower pair than two `foot`
-    windows that are both already open — an app being launched, a GTK client
-    starting cold. It covers this pair with room to spare and nobody has found
-    the pair it does not cover.
-  - `--retract-delay 0` is the nearest thing to the old immediate hide and not
-    the same thing: a zero timer fires on the next event-loop turn, so an
-    activate already queued behind the deactivate can still beat it. It
-    reproduced the churn here, which is all this control needed.
+  Its section in `tests/acceptance.sh` is replaced by AC 50's falsifier: focus
+  a terminal — the app that activates the input method the moment it is focused
+  and holds it — and sample `Visible` six times over three seconds. Zero of six
+  and no `showing` line in the journal is the pass; one reading could not tell
+  "never came up" from "came up and something put it down".
 
 ## Not yet verified
 
@@ -267,7 +247,7 @@ the drawer opened over a dismissed keyboard, the handle tapped, and the keyboard
 coming up in front of the drawer — plus `swaymsg -t get_tree` showing the layer
 change without a remap.
 
-AC 53's remaining halves are under "Partial" above.
+AC 50's new falsifier has not been run; it is under "Partial" above.
 
 Every touch and latency criterion is now answered. What is left is AC 6, which
 needs a compositor restart that would disturb other sessions on this shared

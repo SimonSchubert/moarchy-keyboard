@@ -315,14 +315,30 @@ Each is a claim that can be shown true or false on the phone.
     that holds text input the whole time it is focused, an app that stops
     activating, a dismissal arriving before the state that justified the
     handle.)*
-50. **Visibility is one bool, written by four events and nothing else:** a text
-    input activating (up), the text input deactivating (down, after AC 53's
-    delay), the handle being tapped (up), and `SetVisible` on D-Bus (either).
-    No override flag, no grace period, and no clock but AC 53's — which delays
-    one of these four events and cannot invent a fifth. What the keyboard is
-    doing is therefore a function of the last of those four events, and a
-    dismissal holds until the next one rather than until a timer expires —
-    which AC 49 is what makes safe.
+50. **Visibility is one bool, written by two events and nothing else:** the
+    handle being tapped (up), and `SetVisible` on D-Bus (either). Both are a
+    person asking. No override flag, no grace period, and no clock at all — so
+    what the keyboard is doing is the last thing somebody asked it to do, and
+    nothing about where text focus happens to be.
+
+    **Text focus does not raise this keyboard.** An `activate` used to put it
+    up and a `deactivate` take it down, on the reasoning that an app asking for
+    text input is an app asking for a keyboard. On a phone those are not the
+    same thing: it appeared whenever anything took focus — the app drawer's own
+    search field, a terminal focused for any reason — over half the screen each
+    time, and it went down on its own just as often, which is the half that is
+    worse, because it moves the layout under a thumb already on its way to a
+    key.
+
+    AC 49 is what makes that safe, and it stops being a convenience here: the
+    handle is on screen whenever the keyboard is not, from the first frame, and
+    AC 52 keeps it above the shell's overlays. With nothing else writing the
+    bool, a dismissal holds until a person ends it.
+
+    `InputMethod` is not vestigial. It is how text is committed, and
+    `KeyRouter` reads `isActive()` to decide whether a key leaves as text
+    through `zwp_input_method_v2` or as a raw keysym through the virtual
+    keyboard.
 51. **The surface is mapped at startup**, not on first show, so AC 2 is now
     literally true rather than true-in-spirit. *(The deferred map was an attempt
     at the gesture strip's ordering that the `Top` layer fixed properly, and
@@ -343,47 +359,6 @@ Each is a claim that can be shown true or false on the phone.
     `zwlr_layer_surface_v1.set_layer` since version 2 changes layer without
     remapping, which §4.6 already names as the right tool for the fullscreen
     case.)*
-
-### 4.10 Retracting without churn
-
-53. **A retract that is immediately reversed never reaches the screen.** The
-    text input deactivating arms a single-shot timer — 350 ms by default,
-    `--retract-delay` to change it — and the keyboard goes down when it fires.
-    Any of AC 50's other three events cancels it first. Moving focus between
-    two things that both want a keyboard therefore costs no reflow at all
-    instead of two, and moving to something that wants none still puts the
-    keyboard away, once, a third of a second later.
-
-    *Why there is a clock here at all.* Retracting sets the exclusive zone to
-    0, so sway hands 200 logical px back and every window on the screen relays
-    out; raising it takes them away again. On a phone that runs one app per
-    workspace, switching from one text app to another is deactivate → down →
-    reflow → activate → up → reflow, and the app visibly jumps twice on its way
-    to the state it started in. The same two land on every app-drawer open from
-    a text app, because the drawer takes the seat's keyboard before its own
-    search field asks for one.
-
-    *Why this is not the machinery AC 50 removed.* That was an override flag
-    cleared on a grab-bag of signals after a grace period, and its steady state
-    depended on the clock: the keyboard came back on its own while a hardware
-    keyboard was in use, and stayed down for ever in a terminal. This timer
-    changes no steady state. Once it has fired or been cancelled the bool is
-    exactly what AC 50's four events say it is; all it decides is how long the
-    down edge waits, and only until the next event of any kind.
-
-    *350 ms is a starting value, not a measurement.* It has to cover the round
-    trip between one client losing text focus and the next one asking for a
-    keyboard, on this SoC, and nobody has timed that gap. It is a command-line
-    option so the phone can answer rather than a rebuild; RESULTS.md records
-    what it answered. Too short and the churn comes back; too long and a
-    keyboard visibly lingers over an app that wants none.
-
-    → With a text app focused, switching to another text app leaves the app's
-    geometry unchanged — `swaymsg -t get_tree` reports the same `rect` before
-    and after — and the journal carries `retract cancelled` with no `hiding`
-    between them. The falsifier is the other direction: switching to an app
-    with no text input must still log `hiding -- the text input deactivated`
-    exactly once, within the delay plus a frame.
 
 ---
 

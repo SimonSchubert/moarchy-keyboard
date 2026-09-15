@@ -88,14 +88,6 @@ Q_SIGNALS:
     void activeChanged();
     void stateChanged();
 
-    // Every `activate`, including one that does not change the active state.
-    //
-    // activeChanged is not enough to raise the keyboard on its own, and relying
-    // on it alone was a bug: when focus moves from one text field to another
-    // the compositor coalesces deactivate and activate into a single `done`, so
-    // the active state goes true -> true and no change is ever signalled. So
-    // the rise is taken from here and only the fall from activeChanged.
-    void activated();
     // Another input method already holds the seat. Fatal: two keyboards fighting
     // over one seat is worse than none (AC 7).
     void unavailable();

@@ -222,6 +222,9 @@ cleanup() {
 }
 trap cleanup EXIT
 visible() { busctl --user get-property sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 Visible 2>/dev/null; }
+# The other half of the same interface. Spelled out everywhere above this line;
+# AC 50 drives it four times in one section, which is where it earns a name.
+setvis() { busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b "$1" >/dev/null 2>&1; }
 since()  { date "+%Y-%m-%d %H:%M:%S"; }
 log()    { journalctl --since "$1" --no-pager 2>/dev/null | grep "moarchy-keyboard\["; }
 
@@ -621,128 +624,52 @@ rm -rf ~/.config/moarchy-keyboard/layouts
 restart
 fi
 
-section "AC 53 -- a retract that is immediately reversed never reaches the screen" || true
+section "AC 50 -- text focus does not raise the keyboard" || true
 if ours; then
-# The workspace rect, not a window rect. It carries every exclusive zone on the
-# screen, so it answers "did the layout move" without depending on which window
-# happens to be focused -- and the whole point of this AC is a focus change.
-ws_height() {
-  swaymsg -t get_workspaces 2>/dev/null | python3 -c "
-import json, sys
-for w in json.load(sys.stdin):
-    if w.get('focused'):
-        print(w['rect']['height']); break"
-}
-
-# Two windows that speak text-input-v3 and one that speaks none. foot activates
-# the input method on focus; the QML probe has no text field anywhere, so
-# focusing it deactivates. Plain focus changes, no workspace switching -- for
-# the reason AC 2's cycle spells out, and because another session's tests live
-# on those workspace numbers.
+# The falsifier for the whole of §4.9, and it replaces AC 53's section: that
+# criterion delayed the down edge of an event that no longer exists.
+#
+# A terminal is the sharpest case. foot activates the input method the moment
+# it is focused and holds it for as long as it is, so under the old rule it
+# raised the keyboard every single time -- and a terminal is the one app on
+# this phone where a keyboard over half the screen is least welcome.
+setvis false
+sleep 1
 swaymsg exec "foot -a moa-kb1 cat -A" >/dev/null 2>&1
-swaymsg exec "foot -a moa-kb2 cat -A" >/dev/null 2>&1
-if ! wait_for_window "moa-kb1" 20 || ! wait_for_window "moa-kb2" 20; then
-  no "AC 53: need two text windows; one did not open"
+if ! wait_for_window "moa-kb1" 20; then
+  no "AC 50: need a text window; foot did not open"
 else
-  # Run the mechanism at 2 s rather than the shipped 350 ms. Every assertion
-  # below about *when* something happened has to survive a busctl round trip on
-  # an A53 under load, and at 350 ms the margin is smaller than the measurement.
-  # The default is checked separately, at the bottom, with no clock involved.
-  restart --retract-delay 2000
-
-  # --- the falsifier first, because it is the one that matters -------------
-  #
-  # A debounce that never lets go is the sticky keyboard this was chosen over.
-  # Text app -> an app with no text input at all: the keyboard must still be up
-  # while the timer runs, and must be down after it fires.
-  #
-  # The probe is started here and focused later. Starting it is not a focus
-  # change that can be timed -- a second QML engine on this A53 has taken over
-  # 20 s to appear -- so the clock must not start until it is already on screen.
-  probe_start || true
-
+  S=$(since)
   swaymsg "[app_id=moa-kb1] focus" >/dev/null 2>&1
-  sleep 2
-  if ! probe_present; then
-    no "AC 53: no no-text window to move to; the probe never opened"
-  elif [[ $(visible) != *true* ]]; then
-    no "AC 53: the keyboard was not up on a focused terminal -- nothing to retract"
-  else
-    S=$(since)
-    swaymsg '[title="^moa probe"] focus' >/dev/null 2>&1
+  # Sampled rather than read once. "It never came up" and "it came up and
+  # something put it down" are the same single reading, and on a shared phone
+  # the second is a real case.
+  up=0
+  for _ in 1 2 3 4 5 6; do
+    [[ $(visible) == *true* ]] && up=$((up + 1))
     sleep 0.5
-    mid=$(visible)
-    sleep 3
-    end=$(visible)
-    hides=$(log "$S" | grep -c "hiding -- the text input deactivated")
-    echo "  no-text: Visible at 0.5s=${mid:-?}  at 3.5s=${end:-?}  hiding lines=$hides"
-    if [[ $mid == *true* && $end == *false* && $hides -eq 1 ]]; then
-      ok "AC 53 (retract is delayed, then happens, exactly once)"
-    elif [[ $mid != *true* ]]; then
-      no "AC 53: went down inside the delay -- the timer is not arming"
-    elif [[ $end != *false* ]]; then
-      no "AC 53: still up 3.5s into a 2s delay -- the timer never fires"
-    else
-      no "AC 53: expected one hiding line, got $hides"
-    fi
-  fi
-
-  # --- text -> text: no reflow at all -------------------------------------
-  swaymsg "[app_id=moa-kb1] focus" >/dev/null 2>&1
-  sleep 2
-  up=$(ws_height)
-  S=$(since)
-  swaymsg "[app_id=moa-kb2] focus" >/dev/null 2>&1
-  # Sampled through the switch rather than compared before and after. A reflow
-  # that goes away again is exactly what this AC forbids, and settled-state
-  # comparison cannot see one: with the delay removed the layout is back where
-  # it started within a second either way.
-  moved=0; samples=""
-  for _ in $(seq 1 15); do
-    h=$(ws_height)
-    samples="$samples $h"
-    [[ -n $h && -n $up && $h -ne $up ]] && moved=$((moved+1))
-    sleep 0.1
   done
-  sleep 1
-  cancels=$(log "$S" | grep -c "retract cancelled")
-  hides=$(log "$S" | grep -c "hiding")
-  echo "  text->text: workspace height was $up, samples:$samples"
-  echo "              retract cancelled=$cancels  hiding=$hides"
-  if [[ -z $up ]]; then
-    no "AC 53: could not read the workspace height"
-  elif [[ $hides -eq 0 && $cancels -ge 1 && $moved -eq 0 ]]; then
-    ok "AC 53 (switch between two text apps: no hide, no reflow)"
-  elif [[ $hides -gt 0 ]]; then
-    no "AC 53: the keyboard went down between two apps that both wanted it"
-  elif [[ $moved -gt 0 ]]; then
-    no "AC 53: the layout moved $moved of 15 samples with no hide logged"
+  shows=$(log "$S" | grep -c "showing")
+  echo "  focused a terminal: Visible true in $up of 6 samples, showing lines=$shows"
+  if (( up == 0 && shows == 0 )); then
+    ok "AC 50 (focusing a text field raises nothing)"
   else
-    no "AC 53: nothing was cancelled -- did the second app activate at all?"
+    no "AC 50: the keyboard rose on text focus -- up in $up of 6, $shows showing lines"
   fi
 
-  # --- and the same thing at the shipped default --------------------------
-  #
-  # No clock in this one: the journal says whether the activate beat the timer,
-  # which is the only claim 350 ms is making. If this fails while the 2 s run
-  # passed, the mechanism is right and the number is too small -- which is the
-  # measurement RESULTS.md is asking for, not a broken build.
-  restart
-  swaymsg "[app_id=moa-kb1] focus" >/dev/null 2>&1
-  sleep 2
+  # And the other half: it is still reachable. The handle is the only way up
+  # that does not go through D-Bus, and AC 49 is what this rests on.
   S=$(since)
-  swaymsg "[app_id=moa-kb2] focus" >/dev/null 2>&1
+  setvis true
   sleep 2
-  if [[ $(log "$S" | grep -c "hiding") -eq 0 ]] && log "$S" | grep -q "retract cancelled"; then
-    ok "AC 53 (default 350 ms covers a foot-to-foot switch on this device)"
+  if [[ $(visible) == *true* ]]; then
+    ok "AC 50 (SetVisible still raises it, with the same field focused)"
   else
-    no "AC 53: 350 ms did not cover the switch -- log says:"
-    log "$S" | grep -E "hiding|showing|retract" | tail -4
+    no "AC 50: SetVisible did not raise it -- the only two writers are now one"
   fi
+  setvis false
 fi
 swaymsg "[app_id=moa-kb1] kill" >/dev/null 2>&1
-swaymsg "[app_id=moa-kb2] kill" >/dev/null 2>&1
-probe_clear
 restore_focus
 fi
 
