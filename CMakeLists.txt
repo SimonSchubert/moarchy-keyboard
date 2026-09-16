@@ -69,6 +69,7 @@ qt_add_executable(moarchy-keyboard
   src/virtualkeyboard.cpp
   src/keyrouter.cpp
   src/theme.cpp
+  src/chrome.cpp
   src/oskservice.cpp
   src/panel.cpp
   src/layoutstore.cpp

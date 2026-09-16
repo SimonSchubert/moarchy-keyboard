@@ -20,9 +20,12 @@
 // leaked surface stays mapped, so the keyboard never goes away. That bug is why
 // wvkbd is not the keyboard here, and reintroducing it would defeat the project.
 //
-// So retracting is two things that leave the surface alone:
+// So retracting is three things that leave the surface alone:
 //
-//   exclusive zone -> 0           the focused window takes the space back
+//   exclusive zone -> -1          the focused window takes the space back, and
+//                                 the surface is placed against the screen edge
+//                                 rather than inside anyone else's reservation
+//   bottom margin  -> the handle  where a person dragged it (AC 54, AC 57)
 //   input region   -> the handle  every other touch falls through to whatever
 //                                 is underneath
 //
@@ -73,6 +76,26 @@ public:
     // The handle was tapped.
     Q_INVOKABLE void requestShow();
 
+    // How far above its resting place the handle sits, in logical px (AC 54).
+    // Zero is where it rested before it could move: bottom right, clear of the
+    // gesture strip. Never negative and never past the top of its travel
+    // (AC 56), because every write goes through moveHandle().
+    Q_PROPERTY(int handleOffset READ handleOffset NOTIFY handleOffsetChanged)
+    int handleOffset() const;
+
+    // One step of a drag: where the finger would put the handle. Clamped to
+    // the travel, and the surface follows on the next frame -- the handle does
+    // not move inside the surface, the surface moves on screen.
+    Q_INVOKABLE void moveHandle(int offset);
+
+    // The finger lifted on a drag. Writes the offset where startup reads it
+    // (AC 57); called once per drag rather than per step, so a drag costs one
+    // write and not sixty.
+    Q_INVOKABLE void placeHandle();
+
+    // Where the offset is kept. Read here, at prepare(), before QML asks.
+    void setHandleStatePath(const QString &path) { m_handleStatePath = path; }
+
     // Width of the left band reserved for mobileomarchy's back-edge gesture,
     // excluded from this keyboard's input region and inset from its keys.
     // See the note in panel.cpp for why it is not simply 16.
@@ -105,9 +128,13 @@ public Q_SLOTS:
 Q_SIGNALS:
     void shownChanged();
     void showRequested();
+    void handleOffsetChanged();
 
 private:
     void applyVisibility();
+    void applyMargins();
+    int maxHandleOffset() const;
+    void loadHandleOffset();
 
     QQuickView *m_view = nullptr;
     bool m_shown = false;
@@ -116,6 +143,10 @@ private:
     int m_bottomMargin = -1;
     int m_stripInset = -1;   // -1 until prepare() applies the default
     int m_panelHeight = -1;
+    int m_screenHeight = 0;
+    int m_handleOffset = 0;         // as asked for; handleOffset() holds it to the travel
+    int m_savedHandleOffset = -1;   // what the state file holds, -1 if unknown
+    QString m_handleStatePath;
 };
 
 // See MainOwnedSingleton in qmlsingleton.h: a default-constructible

@@ -1,11 +1,17 @@
 #include "panel.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QLoggingCategory>
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QRegion>
+#include <QSaveFile>
 #include <QScreen>
+
+#include <algorithm>
 
 #include <LayerShellQt/Window>
 
@@ -110,6 +116,20 @@ constexpr int kDefaultStripInset = 24;
 // width is a cheap price for never having a dead stripe.
 constexpr int kDefaultBackEdgeInset = 0;
 
+// How close to the top of the screen a dragged handle may go (AC 56): the
+// status bar's 26 logical px, plus the same 10 the handle keeps above the
+// gesture strip at the other end of its travel.
+//
+// The bar is the shade's grab strip, and on Overlay, like the retracted handle.
+// Two Overlay surfaces over the same pixels are decided by map order, which is
+// a race -- the same one kDefaultBackEdgeInset's note describes -- so the
+// handle stops short of it rather than contesting a pull-down with it.
+//
+// Not the 73 an app's header bar reaches to (moarchy's gestures.md G10b). That
+// was offered and declined: a person who drags the handle over a header's
+// trailing button can see that they did.
+constexpr int kHandleTopClearance = 36;
+
 // The input region for a retracted keyboard until QML says where it put the
 // restore handle: one pixel, in the corner.
 //
@@ -167,6 +187,8 @@ bool Panel::prepare(QString *error)
     }
 
     const int width = screen->geometry().width();
+    m_screenHeight = screen->geometry().height();
+    loadHandleOffset();
 
     LayerShellQt::Window *layerShell = LayerShellQt::Window::get(m_view);
     if (!layerShell) {
@@ -282,8 +304,19 @@ void Panel::setHandleRect(int x, int y, int width, int height)
     const QRect rect(x, y, width, height);
     if (rect == m_handleRect)
         return;
+    const int before = handleOffset();
     m_handleRect = rect;
     qCDebug(lcPanel) << "handle rect ->" << rect;
+
+    // The travel depends on this rect, so the offset in force can change with
+    // it -- but only the offset in force. The one asked for is left alone,
+    // because QML reports several rects on the way to its first layout, and
+    // the first is 54x0: an invalid rect, a travel of nothing, and a stored
+    // place clamped to zero and lost before the real rect arrived. That is how
+    // AC 57 failed on its first run on the Pixel.
+    if (handleOffset() != before)
+        Q_EMIT handleOffsetChanged();
+
     if (!m_shown)
         applyVisibility();
 }
@@ -291,6 +324,118 @@ void Panel::setHandleRect(int x, int y, int width, int height)
 void Panel::requestShow()
 {
     Q_EMIT showRequested();
+}
+
+int Panel::maxHandleOffset() const
+{
+    if (!m_handleRect.isValid() || m_screenHeight <= 0)
+        return 0;
+
+    // Retracted, the surface's bottom sits m_bottomMargin + offset above the
+    // screen's (see applyMargins), so the handle's top on screen is
+    //
+    //   screen - bottomMargin - offset - surface height + handle's y in it
+    //
+    // and the travel ends where that reaches the clearance. Read off the rect
+    // QML reported rather than repeating Main.qml's anchors here, so moving the
+    // handle inside the surface cannot leave this computing a stale range.
+    const int surfaceHeight = m_panelHeight + m_stripInset;
+    const int restTop = m_screenHeight - m_bottomMargin - surfaceHeight + m_handleRect.y();
+    return std::max(0, restTop - kHandleTopClearance);
+}
+
+int Panel::handleOffset() const
+{
+    // AC 57: a place stored on a taller screen, or under a larger travel, comes
+    // back as the nearer end -- without the stored number being rewritten
+    // until a person drags it again.
+    return std::clamp(m_handleOffset, 0, maxHandleOffset());
+}
+
+void Panel::moveHandle(int offset)
+{
+    const int clamped = std::clamp(offset, 0, maxHandleOffset());
+    if (clamped == m_handleOffset)
+        return;
+    m_handleOffset = clamped;
+    qCDebug(lcPanel) << "handle offset ->" << m_handleOffset;
+    Q_EMIT handleOffsetChanged();
+
+    // Shown, there is no handle on screen and the offset only matters for the
+    // next retraction, which applies it.
+    if (m_shown || !m_view)
+        return;
+
+    applyMargins();
+    // set_margin is double-buffered state and LayerShellQt sends it without a
+    // commit, so nothing moves until a frame is committed. The scene has not
+    // changed, so nothing else would ask for one.
+    m_view->update();
+}
+
+void Panel::placeHandle()
+{
+    const int offset = handleOffset();
+    qCInfo(lcPanel) << "handle placed at offset" << offset;
+    if (m_handleStatePath.isEmpty() || offset == m_savedHandleOffset)
+        return;
+
+    // QSaveFile, so what startup reads is the old offset or the new one and
+    // never a truncated file: this phone has already lost every file written
+    // just before a power cut to zero bytes once.
+    QDir().mkpath(QFileInfo(m_handleStatePath).absolutePath());
+    QSaveFile file(m_handleStatePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)
+        || file.write(QByteArray::number(offset) + '\n') < 0
+        || !file.commit()) {
+        qCWarning(lcPanel) << "could not keep the handle's place in"
+                           << m_handleStatePath << "--" << file.errorString();
+        return;
+    }
+    m_savedHandleOffset = offset;
+}
+
+void Panel::loadHandleOffset()
+{
+    if (m_handleStatePath.isEmpty())
+        return;
+
+    QFile file(m_handleStatePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;   // never dragged: it rests where it always has
+
+    bool ok = false;
+    const int offset = file.readAll().trimmed().toInt(&ok);
+    if (!ok || offset < 0) {
+        // Resting it is the safe reading of junk. handleOffset() would hold a
+        // huge number to the travel, but a negative one is not a place.
+        qCWarning(lcPanel) << "unreadable handle place in" << m_handleStatePath
+                           << "-- resting it at the bottom";
+        return;
+    }
+    m_handleOffset = offset;
+    m_savedHandleOffset = offset;
+}
+
+void Panel::applyMargins()
+{
+    LayerShellQt::Window *layerShell = LayerShellQt::Window::get(m_view);
+    if (!layerShell)
+        return;
+
+    // Shown: slid down under the gesture strip by exactly what it grew, as
+    // prepare() explains. Retracted: lifted by the handle's offset, and no
+    // strip compensation -- the exclusive zone is -1 then, so the surface is
+    // placed against the output's edge rather than above the strip's
+    // reservation, and Main.qml already insets the handle out of the strip.
+    //
+    // A positive margin here is not the one the essay by kDefaultBottomMargin
+    // warns against. That one moved a surface that also reserved space, so the
+    // reservation stayed behind and showed as wallpaper. Retracted, this
+    // surface reserves nothing, so a margin moves it and nothing else.
+    layerShell->setMargins(QMargins(0, 0, 0,
+                                    m_shown ? m_bottomMargin - m_stripInset
+                                            : m_bottomMargin + handleOffset()));
 }
 
 void Panel::applyVisibility()
@@ -316,8 +461,18 @@ void Panel::applyVisibility()
     // Reads the same for a non-zero --bottom-margin: the wanted reduction is
     // panelHeight + bottomMargin, the applied margin is bottomMargin -
     // stripInset, and the difference is panelHeight + stripInset either way.
+    //
+    // Retracted it is -1, not 0, and the difference is where the handle lands.
+    // wlroots places a surface with a zone of 0 inside the area other surfaces
+    // have NOT reserved, and -1 against the whole output. The gesture strip
+    // reserves the bottom of the screen from this same Overlay layer, where the
+    // order is map order: so with 0, by wlroots' arithmetic, the handle sits
+    // 10px above a 20px strip or 10px into it depending on which of the two
+    // surfaces was arranged first -- and a shell restart changes that. A place
+    // a person chose (AC 57) has to be measured from something that does not
+    // move.
     if (layerShell)
-        layerShell->setExclusiveZone(m_shown ? m_panelHeight + m_stripInset : 0);
+        layerShell->setExclusiveZone(m_shown ? m_panelHeight + m_stripInset : -1);
 
     // AC 52. Retracted, this surface is the handle and nothing else, and it has
     // to outrank moarchy's overlays: the app drawer, Settings and the theme
@@ -341,6 +496,16 @@ void Panel::applyVisibility()
     if (layerShell)
         layerShell->setLayer(m_shown ? LayerShellQt::Window::LayerTop
                                      : LayerShellQt::Window::LayerOverlay);
+
+    // AC 58. Where the handle is, or the keyboard's own place at the bottom.
+    //
+    // None of the zone, the layer, this margin or the input region below is
+    // committed here -- LayerShellQt and QtWayland both send them as pending
+    // state -- so they all reach the compositor with the next frame, which is
+    // the frame Main.qml draws for the new state. That is what stops a
+    // retraction drawing one frame of keys up where the handle lives, and a
+    // raise drawing one of the handle down at the bottom.
+    applyMargins();
 
     // Retracted, the input region is the handle and nothing else: the rest of
     // the surface is still mapped and still transparent, and if it took touches

@@ -6,7 +6,10 @@
 
 pkgname=moarchy-keyboard
 pkgver=0.1.0
-# 4, for AC 50 -- text focus no longer raises the keyboard. It comes up when
+# 5, for §4.10 -- the restore handle drags along the right edge and keeps its
+# place, and its corners follow moarchy's ui.toml (ACs 54-60).
+#
+# 4 was AC 50 -- text focus no longer raises the keyboard. It comes up when
 # the handle is tapped or when something drives SetVisible, and nothing else
 # writes the bool, so a dismissal holds until a person ends it. AC 53 went with
 # the edge it delayed.
@@ -20,7 +23,7 @@ pkgver=0.1.0
 # -- and a phone already holding 0.1.0-3 compares versions, not contents, and
 # would never be offered it. An image would have hidden that completely,
 # because it installs fresh.
-pkgrel=4
+pkgrel=5
 pkgdesc="Themed on-screen keyboard for mobileomarchy (Qt6/QML, input-method-v2)"
 arch=('aarch64')
 url="https://github.com/SimonSchubert/moarchy-keyboard"

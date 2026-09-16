@@ -1,3 +1,4 @@
+#include "chrome.h"
 #include "inputmethod.h"
 #include "keyrouter.h"
 #include "layoutstore.h"
@@ -32,6 +33,26 @@ QString defaultColorsPath()
 {
     return QDir::homePath()
         + QStringLiteral("/.local/state/omarchy/current/theme/colors.toml");
+}
+
+// Where moarchy keeps its chrome preference. The same resolution as
+// `moarchy-ui`, which is the thing that writes it.
+QString defaultUiPath()
+{
+    QString config = qEnvironmentVariable("XDG_CONFIG_HOME");
+    if (config.isEmpty())
+        config = QDir::homePath() + QStringLiteral("/.config");
+    return config + QStringLiteral("/omarchy/ui.toml");
+}
+
+// Where the restore handle's place is kept (AC 57). State, not config: it is
+// where a finger left something, not a preference anyone writes by hand.
+QString handleStatePath()
+{
+    QString state = qEnvironmentVariable("XDG_STATE_HOME");
+    if (state.isEmpty())
+        state = QDir::homePath() + QStringLiteral("/.local/state");
+    return state + QStringLiteral("/moarchy-keyboard/handle");
 }
 
 // Every startup failure exits non-zero and says why on stderr.
@@ -99,6 +120,21 @@ int main(int argc, char *argv[])
         QStringLiteral("Path to the active theme's colors.toml."),
         QStringLiteral("path"), defaultColorsPath());
     parser.addOption(colorsOption);
+
+    QCommandLineOption uiOption(
+        QStringList { QStringLiteral("ui") },
+        QStringLiteral("Path to moarchy's ui.toml, whose corner style shapes the "
+                       "restore handle."),
+        QStringLiteral("path"), defaultUiPath());
+    parser.addOption(uiOption);
+
+    QCommandLineOption checkUiOption(
+        QStringList { QStringLiteral("check-ui") },
+        QStringLiteral("Print what the handle would read from a ui.toml -- "
+                       "`corners=<style> tile=<px>` -- and exit. Needs no "
+                       "compositor."),
+        QStringLiteral("path"));
+    parser.addOption(checkUiOption);
 
     QCommandLineOption layoutOption(
         QStringList { QStringLiteral("layout") },
@@ -234,6 +270,14 @@ int main(int argc, char *argv[])
 
         out << QStringLiteral("\n%1 layouts, %2 problem(s)\n").arg(names.size()).arg(problems);
         return problems == 0 ? 0 : 1;
+    }
+
+    if (parser.isSet(checkUiOption)) {
+        Chrome chrome(nullptr);
+        chrome.loadOnce(parser.value(checkUiOption));
+        QTextStream(stdout) << "corners=" << chrome.corners()
+                            << " tile=" << chrome.tile() << "\n";
+        return 0;
     }
 
     if (parser.isSet(checkContrastOption)) {
@@ -418,6 +462,9 @@ int main(int argc, char *argv[])
     theme.start(parser.value(colorsOption));
     MOARCHY_MARK("theme parsed");
 
+    Chrome chrome(nullptr);
+    chrome.start(parser.value(uiOption));
+
     OskService osk;
     if (!osk.registerOnBus(&error)) {
         // Not fatal, but it now costs more than it did: with text focus no
@@ -506,6 +553,7 @@ int main(int argc, char *argv[])
         apply(px);
     }
 
+    panel.setHandleStatePath(handleStatePath());
     if (!panel.prepare(&error))
         return fail(QStringLiteral("cannot build the panel"), error);
     MOARCHY_MARK("panel prepared");
@@ -518,6 +566,7 @@ int main(int argc, char *argv[])
 
     KeyRouter::setInstance(&router);
     Theme::setInstance(&theme);
+    Chrome::setInstance(&chrome);
     LayoutStore::setInstance(&layouts);
     Panel::setInstance(&panel);
 

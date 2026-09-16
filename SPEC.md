@@ -93,6 +93,7 @@ One process, three layers.
   ├──────────────────────────────────────────────────────────┤
   │ C++  KeyRouter   decides text-vs-keycode per key press   │
   │      Theme       parses + watches colors.toml            │
+  │      Chrome      parses + watches ui.toml for the handle │
   │      OskService  owns sm.puri.OSK0 on the session bus    │
   ├──────────────────────────────────────────────────────────┤
   │ C++  InputMethod       zwp_input_method_v2               │
@@ -155,8 +156,11 @@ Each is a claim that can be shown true or false on the phone.
 3. *Withdrawn* with AC 1, for the same reason pointed the other way: focus
    moving to a surface with no text input, or `zwp_input_method_v2.deactivate`,
    takes nothing down. AC 50.
-4. **Yields space.** Exclusive zone equals the panel height when shown and 0 when
-   hidden, so the focused window resizes instead of being covered.
+4. **Yields space.** Exclusive zone equals the panel height when shown and
+   reserves nothing when hidden, so the focused window resizes instead of being
+   covered. Hidden it is -1 rather than 0: both reserve nothing, and -1 places
+   the handle against the screen edge instead of above whatever else reserved
+   space first, which is what lets AC 57 keep a place.
 5. **Never steals focus.** With the keyboard up, the app under it keeps keyboard
    focus; typing on an attached USB keyboard still reaches the app.
 6. **Survives compositor restart** — or, if it cannot, exits non-zero so the
@@ -359,6 +363,84 @@ Each is a claim that can be shown true or false on the phone.
     remapping, which §4.6 already names as the right tool for the fullscreen
     case.)*
 
+### 4.10 Moving the handle, and its corners
+
+The handle rests bottom right, which is where a chat app puts Send and a list
+puts its last row's trailing button. AC 52 floats it on `Overlay` above all of
+them, so wherever it is fixed it covers something, and the person holding the
+phone is the only one who knows what. So it moves.
+
+Two decisions, agreed 2026-09-16 before any code:
+
+- **Q1. How high it goes.** Its top stops 10px below the status bar (y = 36
+  logical), the same gap it keeps above the gesture strip. Not below an app's
+  header bar (73, moarchy's G10b): the person chose where it goes, and the top
+  tenth of the screen is worth more than a guard against putting it somewhere
+  they can see.
+- **Q2. Tap versus drag.** A press that moves more than 10 logical px is a drag,
+  and a tap raises the keyboard **on release**. It used to raise on press, and a
+  control that can be dragged cannot, or every drag would open the keyboard
+  first. Not long-press-then-drag, which kept the instant tap and made moving it
+  something a person had to discover.
+
+Coordinates below are logical, on the PinePhone's 360×720, where the handle is
+54×30 and rests with its centre at (321, 671); `tests/tap.py --scale 2` takes
+them as written. `tests/handle.sh` runs every check below and derives the same
+points from whatever output sway reports, so it runs on the Pixel 3a too.
+
+54. **Dragging the handle moves it along the right edge.** It follows the finger
+    up and down with the same offset under the thumb, and stays the same
+    distance from the right edge whatever the finger does sideways. Afterwards
+    it answers only where it is drawn: a tap on its new place raises the
+    keyboard, and a tap where it used to be reaches the app underneath.
+    → `--slide 321,671 321,400`, then a tap at `321,671` leaves the focused
+    workspace's `rect.height` unchanged, and a tap at `321,400` lowers it by the
+    keyboard's reservation. The rect, not `Visible` (moarchy's G14a says why).
+55. **A drag never raises the keyboard.** Not when it starts, not while it
+    moves, not when the finger lifts. A tap still does (Q2).
+    → across AC 54's slide the workspace rect never changes; a tap at the
+    handle's centre then lowers it
+56. **The travel has two ends.** No lower than where it rests today, clear of
+    the gesture strip (AC 47), and no higher than Q1's line. A finger that
+    carries on past either end leaves the handle at that end.
+    → `--slide 321,671 321,0`, then a tap at `321,51` -- the handle's centre
+    with its top on Q1's line -- lowers the rect, which it cannot if the handle
+    followed the finger to the top; `--slide` from there to `321,719`, then a
+    tap at `321,671` lowers it
+57. **It stays where it was put.** Written when the finger lifts, to
+    `~/.local/state/moarchy-keyboard/handle`, and read at startup, so it
+    survives restarting the keyboard, restarting the shell, and a reboot. A
+    missing or unreadable file rests it where it rests today; a stored place
+    outside this screen's travel is pulled to the nearer end.
+    → after AC 54's slide, a tap at `321,400` lowers the rect after
+    `acceptance.sh`'s `restart`, and again after the shell is restarted from
+    the seat (`swaymsg exec`); `echo junk >` the file, `restart`, and a tap at
+    `321,671` lowers it
+58. **Raising and lowering keep it.** The keyboard coming up hides the handle
+    wherever it is (AC 49 unchanged), and going down puts it back at the
+    person's place, not at the bottom. No frame shows keys anywhere but the
+    bottom edge on the way up or down.
+    → after AC 54's slide, `SetVisible true` then `false`, and a tap at
+    `321,400` lowers the rect; eye: `wf-recorder -o DSI-1` across ten
+    up/down cycles with the handle near the top shows no keys above the bottom
+    224px in any frame
+59. **Its corners follow `corners` in `~/.config/omarchy/ui.toml`,** as
+    moarchy's style.md D1 **tile** radius capped at half its height — the rule
+    the shell's `Pill`, `Fab` and `IconButton` already follow. `large` is the
+    capsule it is today, `modest` rounds by 8, `square` is square, a `tile = N`
+    line overrides the preset, and a missing or malformed file is `large`. The
+    keys keep their own radius; this is the handle only.
+    → `grim` two device pixels inside the handle's top-left corner and two
+    inside its left edge at mid-height: the same colour under `square`,
+    different under `large`
+60. **It follows a change live.** `moarchy-ui corners …`, or the theme picker,
+    reshapes a handle already on screen within a second, with no restart —
+    three changes in a row, and starting from no `ui.toml` at all. *(AC 24's
+    reason: a watch on the file alone goes deaf after the first replacement, and
+    one change is exactly the test the broken version passes.)*
+    → remove `ui.toml`, `restart`, then `moarchy-ui corners square`, `large`,
+    `square`, with AC 59's pixel pair sampled a second after each
+
 ---
 
 ## 5. The two input paths, in detail
@@ -417,7 +499,9 @@ with a default and built. All five are cheap to change; none is load-bearing.
    `size-horizontal`, control borders, a typographic scale — and none of it maps
    onto a key grid whose proportions are set by thumbs, not by type. Colour is
    the part of a theme a keyboard should follow, and colour comes from
-   `colors.toml`.
+   `colors.toml`. The one exception is the restore handle's corner radius, read
+   from moarchy's `~/.config/omarchy/ui.toml` rather than `shell.toml` (AC 59):
+   the handle is a control floating over the shell's own, not a key.
 5. **Landscape.** *Confirmed out of scope*, per §2. The phone runs portrait and
    mobileomarchy has no rotation handling to hook into.
 

@@ -33,6 +33,12 @@ ACs 52 and 53 arrived later still and have never been in these counts at all —
 Both are below under "Not yet verified"; the count of 7 this table used to
 carry was stale by one before 53 was written.
 
+ACs 54–60 (§4.10: the handle moves, and follows the corner style) are not in
+these counts either. They were measured on 2026-09-16 on the **Pixel 3a** (360×740
+logical at scale 3), not the PinePhone, which was not on the network, with
+`tests/handle.sh`: 14 checks passed, none failed, one is left to an eye. They
+are under Passed below, and they say which phone they ran on.
+
 These add up to 55 against 54 criteria because **AC 2 is deliberately in two
 places**: what it claims about surfaces — one created, none destroyed — passes
 outright and always has, while the 20 cycles it asks for have never been
@@ -94,6 +100,13 @@ paint — and both are corrected against measurements below rather than defended
 | 25 | **WCAG AA in every theme** | All **22** Omarchy themes pass, worst 4.64:1. Swept offline with `--check-themes`; reproducible via `scripts/fetch-themes.sh` |
 | 7 | Refuses the seat rather than fighting for it | A second instance exited **1** with `another input method already holds this seat; exiting so two keyboards do not fight over it` |
 | 19 | User layout overrides the shipped one | A `letters.json` in `~/.config/moarchy-keyboard/layouts/` was the one loaded, per the log |
+| 54 | A drag moves the handle along the right edge *(Pixel 3a)* | Slid from its rest to mid-screen: a tap on the old place left the workspace rect at 694, a tap on the new place lowered it |
+| 55 | A drag never raises the keyboard *(Pixel 3a)* | Across the slide the rect stayed 694 and the log had 0 `showing` lines |
+| 56 | The travel has two ends *(Pixel 3a)* | Dragged to y=0, the offset stopped at 640 and a tap at y=51 raised the keyboard; dragged to the bottom edge, a tap at rest raised it |
+| 57 | It stays where it was put *(Pixel 3a)* | State file held `321`, the distance dragged. The place held across a keyboard restart and a shell restart (quickshell pid moved), and junk in the file rested it at the bottom. **Failed on the first run**: QML's first rect report is 54×0, which clamped the stored offset to zero before layout finished. Fixed by clamping where the offset is used, not where it is stored |
+| 58 | Raising and lowering keep its place *(Pixel 3a)* | Back at its place after `SetVisible` true/false. `WAYLAND_DEBUG`: 16 `set_margin`s after mapping, 0 committed without a new buffer. Whether that buffer is always the new state's has not been watched on a recording |
+| 59 | Corners follow `ui.toml` *(Pixel 3a, and offline)* | With no `ui.toml` the handle's corner pixel differs from its edge pixel. `scripts/check-ui.sh`: 11 readings match what moarchy's `Ui.js` returns for the same text |
+| 60 | It follows a change live *(Pixel 3a)* | `moarchy-ui corners` square → large → square, each read a second later: filled, rounded, filled |
 | 41 | Dependencies available | The same `makepkg` run validated the `depends` array against an Arch ARM image holding only `qt6-base`, `qt6-declarative`, `qt6-wayland`, `layer-shell-qt`, `wayland`, `libxkbcommon` |
 
 ## Failed

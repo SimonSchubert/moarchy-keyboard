@@ -21,11 +21,21 @@ import moarchy
 // that cannot ask for a keyboard is worse than a pill in the corner of the
 // screen, so this is drawn whenever the keyboard is not (AC 49) and the whole
 // decision is one bool.
+//
+// And it moves (§4.10). Wherever a pill is fixed it covers something -- bottom
+// right is where a chat app puts Send -- so a drag slides it up and down the
+// right edge, and a tap is what is left: a press that lifts without travelling.
 Item {
     id: root
 
     readonly property int pillWidth: 54
     readonly property int pillHeight: 30
+
+    // How far a press may wander and still be a tap (AC 55), in logical px.
+    // Past it the press is a drag for the rest of its life, even if the finger
+    // comes back: a person who moved the handle and put it back where it was
+    // did not ask for the keyboard.
+    readonly property int dragThreshold: 10
 
     implicitWidth: pillWidth
     implicitHeight: pillHeight
@@ -33,7 +43,11 @@ Item {
     Rectangle {
         id: pill
         anchors.fill: parent
-        radius: height / 2
+        // style.md D1's tile radius, capped at half the short side (AC 59) --
+        // moarchy's Ui.radiusOn, which the shell's Pill, Fab and IconButton go
+        // through. So `large` stays the capsule this always was, `modest`
+        // rounds like the shell's tiles, and `square` is square.
+        radius: Math.min(Chrome.tile, height / 2)
 
         // Reads as a raised control rather than as a key: the key fill would
         // make it look like a stray key floating over the app.
@@ -43,7 +57,7 @@ Item {
 
         // Pressed state, because a control with no feedback feels broken on a
         // touchscreen even when it works.
-        scale: touch.pressed ? 0.94 : 1.0
+        scale: touch.held ? 0.94 : 1.0
         Behavior on scale { NumberAnimation { duration: 70 } }
 
         // A miniature keyboard, drawn rather than set as a glyph: the obvious
@@ -96,10 +110,61 @@ Item {
         }
     }
 
+    // One finger. The handle does not move inside this surface -- the surface
+    // moves on screen, through Panel -- so a point's y stays in the frame it
+    // was pressed in, and startY - y is how far the finger has gone. sway keeps
+    // reporting a touch relative to where its surface was at the press
+    // (seatop_down), which is what keeps that true while the surface slides.
     MultiPointTouchArea {
         id: touch
         anchors.fill: parent
         mouseEnabled: true
-        onPressed: Panel.requestShow()
+        maximumTouchPoints: 1
+
+        // MultiPointTouchArea has no `pressed` of its own; the scale above read
+        // one for as long as this file has existed and always got undefined.
+        property bool held: false
+        property bool dragging: false
+        property int startOffset: 0
+
+        onPressed: function (points) {
+            held = true
+            dragging = false
+            startOffset = Panel.handleOffset
+        }
+
+        onUpdated: function (points) {
+            if (points.length === 0)
+                return
+            const point = points[0]
+            if (!dragging && Math.hypot(point.x - point.startX, point.y - point.startY)
+                    > root.dragThreshold)
+                dragging = true
+            // Up the screen is a larger offset. The handle catches up with the
+            // finger the moment a drag starts, so the thumb ends where it
+            // pressed on the pill rather than 10px below it (AC 54).
+            if (dragging)
+                Panel.moveHandle(startOffset + Math.round(point.startY - point.y))
+        }
+
+        // A tap raises on release, not on press (§4.10 Q2): on press it cannot
+        // yet be told apart from the start of a drag.
+        onReleased: function (points) {
+            held = false
+            if (dragging)
+                Panel.placeHandle()
+            else
+                Panel.requestShow()
+            dragging = false
+        }
+
+        // The grab is gone, and no release is coming. Neither a tap nor a place:
+        // the handle goes back to where the press found it.
+        onCanceled: function (points) {
+            held = false
+            if (dragging)
+                Panel.moveHandle(startOffset)
+            dragging = false
+        }
     }
 }

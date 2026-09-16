@@ -5,10 +5,10 @@
 #include <QQmlEngine>
 #include <QtGlobal>
 
-// The four singletons main() owns and QML borrows: Colors, Router, Layouts and
-// Panel.
+// The singletons main() owns and QML borrows: Colors, Chrome, Router, Layouts
+// and Panel.
 //
-// All four need the same three things, and they used to carry four copies of
+// All of them need the same three things, and they used to carry four copies of
 // them -- which is three copies too many for an invariant this sharp. The
 // relevant machinery is QQmlPrivate::singletonConstructionMode() in
 // qqmlprivate.h, which chooses how the engine obtains a QML_SINGLETON:

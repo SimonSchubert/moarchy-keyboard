@@ -27,6 +27,8 @@ step "layouts are internally consistent" "$BIN" --check-layouts
 
 step "the generated keymap compiles" bash -c "'$BIN' --dump-keymap >/dev/null"
 
+step "ui.toml reads as moarchy's Ui.js reads it (AC 59)" ./scripts/check-ui.sh "$BIN"
+
 THEMES="${THEMES:-/tmp/omarchy-themes}"
 if [[ ! -d $THEMES ]]; then
   echo
