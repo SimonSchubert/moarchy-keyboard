@@ -144,15 +144,17 @@ Each is a claim that can be shown true or false on the phone.
 
 ### 4.1 Process and lifecycle
 
-1. **Raises itself.** When a client with an active `zwp_text_input_v3` focuses a
-   text field, the keyboard becomes visible with no user action.
+1. *Withdrawn.* This said a client focusing a text field raises the keyboard
+   with no user action. It does not, deliberately: text focus writes nothing,
+   and AC 50 says what does.
 2. **One surface, forever.** The process creates exactly one layer surface at
    startup and destroys it only at exit. Show/hide is anchor and exclusive-zone
    changes. Over 20 consecutive activate/deactivate cycles, the compositor logs
    equal counts of surface create and destroy — which for this AC means zero of
    each after startup. *(This is the wvkbd bug. It is the first thing to test.)*
-3. **Retracts itself** when focus moves to a surface with no text input, and on
-   `zwp_input_method_v2.deactivate`.
+3. *Withdrawn* with AC 1, for the same reason pointed the other way: focus
+   moving to a surface with no text input, or `zwp_input_method_v2.deactivate`,
+   takes nothing down. AC 50.
 4. **Yields space.** Exclusive zone equals the panel height when shown and 0 when
    hidden, so the focused window resizes instead of being covered.
 5. **Never steals focus.** With the keyboard up, the app under it keeps keyboard
@@ -170,7 +172,7 @@ Each is a claim that can be shown true or false on the phone.
 8. **Owns `sm.puri.OSK0`** at `/sm/puri/OSK0` with a readable `Visible` property
    and a `SetVisible(b)` method, matching the interface Phosh defines and
    squeekboard implements.
-9. `bin/mobileomarchy-toggle-keyboard` in mobileomarchy works **unmodified**.
+9. `bin/moarchy-toggle-keyboard` in moarchy works **unmodified**.
    Verified by running it with no edits to that file.
 
 ### 4.3 Input paths
@@ -188,7 +190,7 @@ Each is a claim that can be shown true or false on the phone.
     history.
 14. **Backspace.** Deletes one character in both paths, including immediately
     after a `commit_string` with no intervening `done`.
-15. **No phantom evdev device.** `bin/mobileomarchy-has-keyboard` still exits 1
+15. **No phantom evdev device.** `bin/moarchy-has-keyboard` still exits 1
     with the OSK running — nothing in `/proc/bus/input/devices` gains
     KEY_ESC+KEY_1+KEY_Q+KEY_SPACE. *(Guards against ever "fixing" input by
     reaching for uinput, which would make the lock screen falsely believe a real
@@ -269,23 +271,20 @@ Each is a claim that can be shown true or false on the phone.
 
 ### 4.8 Packaging and integration
 
-40. Builds reproducibly in mobileomarchy's existing aarch64 container
-    (`docker/build-packages.sh`) and installs as a pacman package, as walker and
-    elephant already do.
+40. Builds reproducibly in moarchy's aarch64 container
+    (`docker/build-packages.sh`) and installs as a pacman package.
 41. Depends only on what the phone already has or can get from `extra`:
     `qt6-base`, `qt6-declarative`, `qt6-wayland`, `layer-shell-qt`, `wayland`
     (which also supplies `wayland-scanner`), `libxkbcommon`. **Not**
     `wlr-protocols` — it does not contain these protocols; see §3.
-42. mobileomarchy's change is **one line** in `default/sway/autostart.conf`
-    (`exec squeekboard` → `exec moarchy-keyboard`), plus removing `squeekboard`
-    and `libbsd` from `mobileomarchy-base.packages`.
+42. moarchy starts it with **one line**, `exec_always moarchy-keyboard` in
+    `default/sway/autostart.conf`, and pulls it in as a `depends` of
+    `moarchy-meta`.
 43. The two GSettings keys squeekboard needed
     (`org.gnome.desktop.a11y.applications screen-keyboard-enabled` and
-    `org.gnome.desktop.input-sources sources`) are **not** required, and
-    `install/config.sh`'s gating block can be deleted.
-44. `bin/mobileomarchy-selftest` gains a check that the keyboard owns
-    `sm.puri.OSK0`.
-45. The panel's background runs under mobileomarchy's gesture strip, so no band
+    `org.gnome.desktop.input-sources sources`) are **not** required.
+44. `bin/moarchy-selftest` checks that the keyboard owns `sm.puri.OSK0`.
+45. The panel's background runs under moarchy's gesture strip, so no band
     of wallpaper shows below the keys. The keys themselves do not move: the
     surface is grown by `--gesture-strip-inset` and given a negative bottom
     margin of the same size, and the key area is inset by it again. Measured on
