@@ -117,7 +117,7 @@ bool InputMethod::isSensitive() const
 void InputMethod::commitString(const QString &text)
 {
     if (!m_inputMethod || !m_current.active) {
-        qCWarning(lcInput) << "commitString with no active text input; dropping" << text;
+        qCWarning(lcInput) << "commitString with no active text input; dropping it";
         return;
     }
 

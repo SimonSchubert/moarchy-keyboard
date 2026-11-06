@@ -38,14 +38,17 @@ void KeyRouter::noteFrame()
                      << m_sincePress.elapsed() << "ms";
 }
 
-void KeyRouter::reportLatency(const char *what, const QString &detail)
+// Diagnostics never carry what was typed: the text, the character or the
+// key. The field may be a password or a terminal running sudo, and its purpose
+// is not always declared, so isSensitive() cannot be the guard. Timing, route
+// and failure kind are what these lines are for.
+void KeyRouter::reportLatency(const char *what)
 {
     if (!m_sinceRelease.isValid())
         return;
-    qCInfo(lcRouter).noquote() << QStringLiteral("latency: release to %1 %2 ms  (%3)")
+    qCInfo(lcRouter).noquote() << QStringLiteral("latency: release to %1 %2 ms")
                                      .arg(QLatin1String(what))
-                                     .arg(m_sinceRelease.elapsed())
-                                     .arg(detail);
+                                     .arg(m_sinceRelease.elapsed());
 }
 
 bool KeyRouter::isActive() const
@@ -80,7 +83,7 @@ void KeyRouter::sendText(const QString &text)
 
     if (m_inputMethod->isActive()) {
         m_inputMethod->commitString(text);
-        reportLatency("commit_string on the wire", text);
+        reportLatency("commit_string on the wire");
         return;
     }
 
@@ -92,7 +95,7 @@ void KeyRouter::sendText(const QString &text)
         // cover: a multi-code-unit string (an emoji), or a character that
         // arrived after the keymap was built. Everything the layouts declare at
         // startup has a keycode -- see VirtualKeyboard::buildKeymap.
-        qCWarning(lcRouter) << "no keycode for" << text
+        qCWarning(lcRouter) << "no keycode for the typed text"
                             << "and no active text input; dropped";
         return;
     }
@@ -100,7 +103,7 @@ void KeyRouter::sendText(const QString &text)
     m_virtualKeyboard->tap(keycode,
                            needsShift ? VirtualKeyboard::Modifiers(VirtualKeyboard::Shift)
                                       : VirtualKeyboard::Modifiers(VirtualKeyboard::NoModifiers));
-    reportLatency("keycode on the wire", text);
+    reportLatency("keycode on the wire");
 }
 
 void KeyRouter::sendKey(const QString &name, int modifiers)
@@ -111,7 +114,7 @@ void KeyRouter::sendKey(const QString &name, int modifiers)
         return;
     }
     m_virtualKeyboard->tap(keycode, VirtualKeyboard::Modifiers(modifiers));
-    reportLatency("keycode on the wire", name);
+    reportLatency("keycode on the wire");
 }
 
 void KeyRouter::sendChord(const QString &character, int modifiers)
@@ -119,7 +122,7 @@ void KeyRouter::sendChord(const QString &character, int modifiers)
     bool needsShift = false;
     const uint32_t keycode = m_virtualKeyboard->keycodeForCharacter(character.toLower(), &needsShift);
     if (keycode == 0) {
-        qCWarning(lcRouter) << "no keycode for chord" << character;
+        qCWarning(lcRouter) << "no keycode for the chord character; dropped";
         return;
     }
     m_virtualKeyboard->tap(keycode, VirtualKeyboard::Modifiers(modifiers));

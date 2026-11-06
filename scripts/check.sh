@@ -25,6 +25,8 @@ step "build (includes qmllint, which fails on any warning)" ./scripts/build.sh
 
 step "layouts are internally consistent" "$BIN" --check-layouts
 
+step "nothing typed reaches the log" "$BUILD_DIR/log-redaction-test"
+
 step "the generated keymap compiles" bash -c "'$BIN' --dump-keymap >/dev/null"
 
 step "ui.toml reads as moarchy's Ui.js reads it (AC 59)" ./scripts/check-ui.sh "$BIN"

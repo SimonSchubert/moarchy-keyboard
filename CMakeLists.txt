@@ -123,5 +123,28 @@ qt_add_resources(moarchy-keyboard "layouts"
     layouts/terminal.json
 )
 
+# Offline regression checks, run by scripts/check.sh. Off by default so a
+# package build needs nothing beyond what it already does.
+option(MOARCHY_BUILD_TESTS "Build the offline regression tests" OFF)
+if(MOARCHY_BUILD_TESTS)
+  find_package(Qt6 REQUIRED COMPONENTS Test)
+  # What was typed must never reach the log; see the test for why.
+  qt_add_executable(log-redaction-test
+    tests/log_redaction_test.cpp
+    src/keyrouter.cpp
+    src/inputmethod.cpp
+    src/virtualkeyboard.cpp
+    src/waylandconnection.cpp
+    ${PROTOCOL_SOURCES}
+  )
+  target_include_directories(log-redaction-test PRIVATE
+    "${GENERATED_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/src")
+  target_link_libraries(log-redaction-test PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Test
+    PkgConfig::WaylandClient
+    PkgConfig::XkbCommon
+  )
+endif()
+
 install(TARGETS moarchy-keyboard RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY layouts/ DESTINATION ${CMAKE_INSTALL_DATADIR}/moarchy-keyboard/layouts)
