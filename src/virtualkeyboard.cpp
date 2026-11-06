@@ -293,7 +293,7 @@ void VirtualKeyboard::sendModifiers(Modifiers modifiers)
 void VirtualKeyboard::tap(uint32_t linuxKeycode, Modifiers modifiers)
 {
     if (!m_keyboard) {
-        qCWarning(lcKeys) << "no virtual keyboard; dropping keycode" << linuxKeycode;
+        qCWarning(lcKeys) << "no virtual keyboard; dropping a key";
         return;
     }
 

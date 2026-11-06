@@ -100,7 +100,7 @@ private:
     // worse than dead: the setter pushed them onto the SEAT as held modifiers,
     // where they would have applied to a plugged-in USB keyboard too, and
     // stayed applied until something cleared them.
-    void reportLatency(const char *what, const QString &detail);
+    void reportLatency(const char *what);
 
     QElapsedTimer m_sincePress;
     QElapsedTimer m_sinceRelease;

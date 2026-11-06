@@ -8,7 +8,8 @@ BUILD_TYPE="${BUILD_TYPE:-RelWithDebInfo}"
 
 cmake -S . -B "$BUILD_DIR" -G Ninja \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-  -DCMAKE_INSTALL_PREFIX=/usr
+  -DCMAKE_INSTALL_PREFIX=/usr \
+  -DMOARCHY_BUILD_TESTS=ON
 
 cmake --build "$BUILD_DIR" --parallel
 

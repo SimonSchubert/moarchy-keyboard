@@ -102,6 +102,12 @@ Prints the generated xkb keymap and compile-checks it. No compositor needed. A
 keymap that fails to compile costs every non-ASCII character silently, so this
 is worth having.
 
+`scripts/check.sh` runs these and `build/log-redaction-test`, which turns on
+every `moarchy.*` logging category, sends a sentinel through each path that
+drops input, and fails if the sentinel or any line outside the known templates
+reaches the log. Diagnostics report timing, route and failure kind, never the
+text, character or key.
+
 ## Testing on the phone
 
 The scripts in `tests/` run on the device. They exist because two things about
